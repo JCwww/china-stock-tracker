@@ -49,9 +49,6 @@
             <span>查询</span>
             <input id="searchInput" autocomplete="off" placeholder="名称或代码" />
           </label>
-          <button id="resetButton" type="button" class="secondary" title="清空本浏览器里的增删改，重新使用仓库公开数据">
-            重新载入公开数据
-          </button>
         </div>
       </section>
 
@@ -59,16 +56,16 @@
         <table>
           <thead>
             <tr>
-              <th>序号</th>
+              <th><button class="sort-button" type="button" data-sort="index">序号</button></th>
               <th>股票名称</th>
               <th>股票代码</th>
-              <th>起始日期</th>
-              <th>添加起始日价</th>
-              <th>起始日起最高价</th>
-              <th>每日收盘价</th>
-              <th>涨幅</th>
-              <th>最高价回撤</th>
-              <th>起始价回撤</th>
+              <th><button class="sort-button" type="button" data-sort="startDate">起始日期</button></th>
+              <th><button class="sort-button" type="button" data-sort="startPrice">添加起始日价</button></th>
+              <th><button class="sort-button" type="button" data-sort="highPrice">起始日起最高价</button></th>
+              <th><button class="sort-button" type="button" data-sort="closePrice">今日收盘价</button></th>
+              <th><button class="sort-button" type="button" data-sort="increase">涨幅</button></th>
+              <th><button class="sort-button" type="button" data-sort="highDrawdown">最高价回撤</button></th>
+              <th><button class="sort-button" type="button" data-sort="startDrawdown">起始价回撤</button></th>
               <th>操作</th>
             </tr>
           </thead>

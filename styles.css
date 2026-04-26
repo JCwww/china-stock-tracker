@@ -102,7 +102,7 @@ h1 {
 }
 
 .search-row {
-  grid-template-columns: minmax(220px, 360px) auto 1fr;
+  grid-template-columns: minmax(220px, 360px) 1fr;
 }
 
 label {
@@ -202,6 +202,38 @@ th {
   font-weight: 800;
 }
 
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  min-height: 24px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  text-align: right;
+}
+
+.sort-button::after {
+  content: "↕";
+  color: #7b8780;
+  font-size: 11px;
+}
+
+.sort-button.active::after {
+  content: "↓";
+  color: var(--accent);
+}
+
+.sort-button.active[data-direction="asc"]::after {
+  content: "↑";
+}
+
 th:nth-child(2),
 td:nth-child(2),
 th:nth-child(3),
@@ -229,6 +261,10 @@ th:first-child,
 td:first-child {
   width: 56px;
   text-align: center;
+}
+
+th:first-child .sort-button {
+  justify-content: center;
 }
 
 th:last-child,

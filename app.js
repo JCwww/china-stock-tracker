@@ -6,6 +6,8 @@ const state = {
   publicStocks: [],
   stocks: [],
   query: "",
+  sortKey: "",
+  sortDirection: "desc",
 };
 
 const els = {
@@ -18,10 +20,10 @@ const els = {
   startDate: document.querySelector("#startDateInput"),
   startPrice: document.querySelector("#startPriceInput"),
   search: document.querySelector("#searchInput"),
-  reset: document.querySelector("#resetButton"),
   refresh: document.querySelector("#refreshButton"),
   status: document.querySelector("#updateStatus"),
   clock: document.querySelector("#clockText"),
+  sortButtons: [...document.querySelectorAll("[data-sort]")],
 };
 
 function today() {
@@ -104,10 +106,46 @@ function updateClock() {
 
 function filteredStocks() {
   const query = state.query.trim().toLowerCase();
-  if (!query) return state.stocks;
-  return state.stocks.filter((stock) => {
+  const stocks = !query
+    ? state.stocks
+    : state.stocks.filter((stock) => {
     return stock.code.includes(query) || String(stock.name || "").toLowerCase().includes(query);
   });
+  return sortStocks(stocks);
+}
+
+function sortValue(stock, index, key) {
+  if (key === "index") return index + 1;
+  if (key === "startDate") return Date.parse(stock.startDate || "") || 0;
+  if (key === "increase" || key === "highDrawdown" || key === "startDrawdown") {
+    return calculate(stock)[key];
+  }
+  return Number(stock[key]);
+}
+
+function sortStocks(stocks) {
+  if (!state.sortKey) return stocks;
+  const direction = state.sortDirection === "asc" ? 1 : -1;
+  return [...stocks].sort((a, b) => {
+    const originalA = state.stocks.findIndex((stock) => stock.code === a.code);
+    const originalB = state.stocks.findIndex((stock) => stock.code === b.code);
+    const valueA = sortValue(a, originalA, state.sortKey);
+    const valueB = sortValue(b, originalB, state.sortKey);
+
+    if (!Number.isFinite(valueA) && !Number.isFinite(valueB)) return originalA - originalB;
+    if (!Number.isFinite(valueA)) return 1;
+    if (!Number.isFinite(valueB)) return -1;
+    if (valueA === valueB) return originalA - originalB;
+    return (valueA - valueB) * direction;
+  });
+}
+
+function updateSortButtons() {
+  for (const button of els.sortButtons) {
+    const active = button.dataset.sort === state.sortKey;
+    button.classList.toggle("active", active);
+    button.dataset.direction = active ? state.sortDirection : "";
+  }
 }
 
 function replaceStock(code, nextStock) {
@@ -140,6 +178,7 @@ function render() {
   els.rows.textContent = "";
   const stocks = filteredStocks();
   els.empty.hidden = stocks.length > 0;
+  updateSortButtons();
 
   stocks.forEach((stock, index) => {
     const row = els.template.content.firstElementChild.cloneNode(true);
@@ -341,11 +380,17 @@ els.search.addEventListener("input", () => {
   render();
 });
 
-els.reset.addEventListener("click", () => {
-  state.stocks = state.publicStocks;
-  localStorage.removeItem(LOCAL_KEY);
-  render();
-  els.status.textContent = "已重新载入公开数据";
+els.sortButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const key = button.dataset.sort;
+    if (state.sortKey === key) {
+      state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      state.sortKey = key;
+      state.sortDirection = key === "index" || key === "startDate" ? "asc" : "desc";
+    }
+    render();
+  });
 });
 
 els.refresh.addEventListener("click", refreshVisibleStocks);
