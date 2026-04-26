@@ -25,11 +25,20 @@ const els = {
 };
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function normalizeCode(code) {
   return String(code || "").replace(/\D/g, "").slice(0, 6);
+}
+
+function parseCodes(value) {
+  const matches = String(value || "").match(/\d{6}/g) || [];
+  return [...new Set(matches.map(normalizeCode))];
 }
 
 function exchangePrefix(code) {
@@ -281,7 +290,7 @@ async function refreshVisibleStocks() {
 async function init() {
   updateClock();
   window.setInterval(updateClock, 1000);
-  els.startDate.value = today();
+  els.startDate.value = "";
   const publicStocks = await loadPublicStocks();
   state.publicStocks = publicStocks;
   state.stocks = loadLocal() || publicStocks;
@@ -292,25 +301,39 @@ async function init() {
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const code = normalizeCode(els.code.value);
-  if (code.length !== 6) return;
+  const codes = parseCodes(els.code.value);
+  if (codes.length === 0) return;
 
-  els.status.textContent = "正在添加";
-  try {
-    const fetched = await fetchStockFromEastMoney(code, els.startDate.value, els.startPrice.value);
-    const stock = {
-      ...fetched,
-      name: els.name.value.trim() || fetched.name,
-    };
-    state.stocks = [stock, ...state.stocks.filter((item) => item.code !== code)];
-    saveLocal();
-    els.form.reset();
-    els.startDate.value = today();
-    els.status.textContent = `已添加 ${stock.name || stock.code}`;
-    render();
-  } catch (error) {
-    els.status.textContent = error.message || "添加失败";
+  const addDate = els.startDate.value || today();
+  const manualName = els.name.value.trim();
+  const manualStartPrice = els.startPrice.value;
+  const added = [];
+  const failed = [];
+
+  els.status.textContent = `正在添加 ${codes.length} 只股票`;
+  for (const code of codes) {
+    try {
+      const fetched = await fetchStockFromEastMoney(code, addDate, codes.length === 1 ? manualStartPrice : "");
+      added.push({
+        ...fetched,
+        name: codes.length === 1 && manualName ? manualName : fetched.name,
+      });
+    } catch (error) {
+      failed.push(code);
+    }
   }
+
+  if (added.length > 0) {
+    const addedCodes = new Set(added.map((stock) => stock.code));
+    state.stocks = [...added, ...state.stocks.filter((item) => !addedCodes.has(item.code))];
+    saveLocal();
+    render();
+  }
+
+  els.form.reset();
+  els.startDate.value = "";
+  els.status.textContent =
+    failed.length > 0 ? `已添加 ${added.length} 只，失败 ${failed.join("、")}` : `已添加 ${added.length} 只股票`;
 });
 
 els.search.addEventListener("input", () => {

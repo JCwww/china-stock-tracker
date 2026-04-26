@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>中国股票跟踪表</title>
+    <title>股票追踪</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="shell">
-      <section class="topbar" aria-label="股票跟踪表">
+      <section class="topbar" aria-label="股票追踪">
         <div>
           <p class="eyebrow">China A-Share Tracker</p>
-          <h1>中国股票跟踪表</h1>
+          <h1>股票追踪</h1>
         </div>
         <div class="meta">
           <span id="clockText">--</span>
@@ -27,15 +27,15 @@
         <form id="stockForm" class="stock-form">
           <label>
             <span>股票代码</span>
-            <input id="codeInput" name="code" inputmode="numeric" autocomplete="off" placeholder="002716" required />
+            <textarea id="codeInput" name="code" inputmode="numeric" autocomplete="off" placeholder="002716, 300058, 002131" required></textarea>
           </label>
           <label>
             <span>股票名称</span>
-            <input id="nameInput" name="name" autocomplete="off" placeholder="可自动获取" />
+            <input id="nameInput" name="name" autocomplete="off" placeholder="单只股票可手动填写" />
           </label>
           <label>
             <span>起始日期</span>
-            <input id="startDateInput" name="startDate" type="date" />
+            <input id="startDateInput" name="startDate" type="date" title="不填则使用添加日期" />
           </label>
           <label>
             <span>起始价</span>

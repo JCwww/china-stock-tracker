@@ -26,7 +26,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -112,7 +113,8 @@ label {
   font-weight: 650;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -123,7 +125,14 @@ input {
   outline: none;
 }
 
-input:focus {
+textarea {
+  min-height: 42px;
+  max-height: 92px;
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
@@ -200,6 +209,16 @@ td:nth-child(3) {
   text-align: left;
 }
 
+th:nth-child(2),
+td:nth-child(2) {
+  width: 120px;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  width: 92px;
+}
+
 th:nth-child(4),
 td:nth-child(4) {
   width: 136px;
@@ -269,10 +288,25 @@ tbody tr:last-child td {
 
   .table-wrap {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   table {
-    min-width: 1060px;
+    min-width: 1120px;
+  }
+
+  th:nth-child(2),
+  td:nth-child(2) {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: 10px 0 18px rgba(22, 34, 30, 0.1);
+  }
+
+  th:nth-child(2) {
+    z-index: 4;
+    background: #eef3ef;
   }
 }
 
