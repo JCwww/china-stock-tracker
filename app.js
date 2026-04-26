@@ -103,8 +103,8 @@ function calculate(stock) {
   const close = Number(stock.closePrice);
   return {
     increase: start > 0 ? (high - start) / start : NaN,
-    highDrawdown: high > 0 ? (high - close) / high : NaN,
-    startDrawdown: start > 0 ? (start - close) / start / -1 : NaN,
+    highDrawdown: high > 0 ? (close - high) / high : NaN,
+    startDrawdown: start > 0 ? (close - start) / start : NaN,
   };
 }
 
@@ -114,7 +114,8 @@ function saveLocal() {
 
 function loadLocal() {
   try {
-    return JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
+    const stocks = JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
+    return Array.isArray(stocks) && stocks.length > 0 ? stocks : null;
   } catch {
     return null;
   }
@@ -457,14 +458,19 @@ async function refreshVisibleStocks() {
 async function init() {
   updateClock();
   window.setInterval(updateClock, 1000);
-  state.recentTradingDate = await fetchRecentTradingDay();
-  els.startDate.value = state.recentTradingDate;
   const publicStocks = await loadPublicStocks();
   state.publicStocks = publicStocks;
   state.stocks = loadLocal() || publicStocks;
   render();
   const newest = state.stocks.map((stock) => stock.updatedAt).filter(Boolean).sort().pop();
+  state.recentTradingDate = newest || previousWeekday();
+  els.startDate.value = state.recentTradingDate;
   els.status.textContent = newest ? `数据日期 ${newest}` : "数据已载入";
+
+  fetchRecentTradingDay().then((date) => {
+    state.recentTradingDate = date;
+    els.startDate.value = date;
+  });
 }
 
 els.form.addEventListener("submit", async (event) => {
