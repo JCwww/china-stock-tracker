@@ -21,6 +21,7 @@ const els = {
   reset: document.querySelector("#resetButton"),
   refresh: document.querySelector("#refreshButton"),
   status: document.querySelector("#updateStatus"),
+  clock: document.querySelector("#clockText"),
 };
 
 function today() {
@@ -79,12 +80,51 @@ function loadLocal() {
   }
 }
 
+function updateClock() {
+  const now = new Date();
+  els.clock.textContent = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(now);
+}
+
 function filteredStocks() {
   const query = state.query.trim().toLowerCase();
   if (!query) return state.stocks;
   return state.stocks.filter((stock) => {
     return stock.code.includes(query) || String(stock.name || "").toLowerCase().includes(query);
   });
+}
+
+function replaceStock(code, nextStock) {
+  state.stocks = state.stocks.map((stock) => (stock.code === code ? nextStock : stock));
+  saveLocal();
+  render();
+}
+
+async function changeStartDate(stock, startDate, input) {
+  const oldValue = stock.startDate || "";
+  input.disabled = true;
+  els.status.textContent = `正在更新 ${stock.name || stock.code}`;
+
+  try {
+    const next = await fetchStockFromEastMoney(stock.code, startDate, "");
+    replaceStock(stock.code, {
+      ...stock,
+      ...next,
+      name: stock.name || next.name,
+    });
+    els.status.textContent = `${stock.name || stock.code} 已按新起始日期更新`;
+  } catch (error) {
+    input.value = oldValue;
+    input.disabled = false;
+    els.status.textContent = error.message || "更新失败";
+  }
 }
 
 function render() {
@@ -100,12 +140,18 @@ function render() {
     cells.index.textContent = String(index + 1);
     cells.name.textContent = stock.name || "-";
     cells.code.textContent = stock.code;
+    cells.startDate.value = stock.startDate || "";
     cells.startPrice.textContent = money(stock.startPrice);
     cells.highPrice.textContent = money(stock.highPrice);
     cells.closePrice.textContent = money(stock.closePrice);
     setTrend(cells.increase, computed.increase);
     setTrend(cells.highDrawdown, computed.highDrawdown);
     setTrend(cells.startDrawdown, computed.startDrawdown);
+
+    cells.startDate.addEventListener("change", () => {
+      if (!cells.startDate.value || cells.startDate.value === stock.startDate) return;
+      changeStartDate(stock, cells.startDate.value, cells.startDate);
+    });
 
     row.querySelector(".delete").addEventListener("click", () => {
       state.stocks = state.stocks.filter((item) => item.code !== stock.code);
@@ -233,6 +279,8 @@ async function refreshVisibleStocks() {
 }
 
 async function init() {
+  updateClock();
+  window.setInterval(updateClock, 1000);
   els.startDate.value = today();
   const publicStocks = await loadPublicStocks();
   state.publicStocks = publicStocks;
@@ -274,7 +322,7 @@ els.reset.addEventListener("click", () => {
   state.stocks = state.publicStocks;
   localStorage.removeItem(LOCAL_KEY);
   render();
-  els.status.textContent = "已恢复公开列表";
+  els.status.textContent = "已重新载入公开数据";
 });
 
 els.refresh.addEventListener("click", refreshVisibleStocks);
