@@ -8,8 +8,8 @@
       "startDate": "2024-01-01",
       "startPrice": 6.92,
       "highPrice": 21.3,
-      "closePrice": 11.57,
-      "updatedAt": "2026-04-24"
+      "closePrice": 14.28,
+      "updatedAt": "2026-04-26"
     },
     {
       "name": "蓝色光标",
@@ -17,8 +17,8 @@
       "startDate": "2024-01-01",
       "startPrice": 11.52,
       "highPrice": 24.43,
-      "closePrice": 17.4,
-      "updatedAt": "2026-04-24"
+      "closePrice": 19.62,
+      "updatedAt": "2026-04-26"
     },
     {
       "name": "利欧股份",
@@ -26,9 +26,13 @@
       "startDate": "2024-01-01",
       "startPrice": 5.64,
       "highPrice": 10.4,
-      "closePrice": 7.37,
-      "updatedAt": "2026-04-24"
+      "closePrice": 8.35,
+      "updatedAt": "2026-04-26"
     }
   ],
-  "failures": []
+  "failures": [
+    "002716: Remote end closed connection without response",
+    "300058: Remote end closed connection without response",
+    "002131: Remote end closed connection without response"
+  ]
 }
