@@ -8,6 +8,7 @@ const state = {
   query: "",
   sortKey: "",
   sortDirection: "desc",
+  recentTradingDate: "",
 };
 
 const els = {
@@ -34,6 +35,21 @@ function today() {
   return `${year}-${month}-${day}`;
 }
 
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function previousWeekday() {
+  const date = new Date();
+  const day = date.getDay();
+  if (day === 0) date.setDate(date.getDate() - 2);
+  if (day === 6) date.setDate(date.getDate() - 1);
+  return formatDate(date);
+}
+
 function normalizeCode(code) {
   return String(code || "").replace(/\D/g, "").slice(0, 6);
 }
@@ -41,6 +57,13 @@ function normalizeCode(code) {
 function parseCodes(value) {
   const matches = String(value || "").match(/\d{6}/g) || [];
   return [...new Set(matches.map(normalizeCode))];
+}
+
+function parseNames(value) {
+  return String(value || "")
+    .split(/[\n,，;；]+/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function exchangePrefix(code) {
@@ -192,8 +215,14 @@ function render() {
     const computed = calculate(stock);
 
     cells.index.textContent = String(index + 1);
-    cells.name.textContent = stock.name || "-";
-    cells.code.textContent = stock.code;
+    cells.identity.textContent = "";
+    const nameLine = document.createElement("div");
+    const codeLine = document.createElement("div");
+    nameLine.className = "stock-name";
+    codeLine.className = "stock-code";
+    nameLine.textContent = stock.name || "-";
+    codeLine.textContent = `（${stock.code}）`;
+    cells.identity.append(nameLine, codeLine);
     cells.remark.value = stock.remark || "";
     cells.startDate.value = stock.startDate || "";
     cells.startPrice.textContent = money(stock.startPrice);
@@ -294,6 +323,58 @@ function summarizeBusiness(text) {
   return parts.slice(0, 4).join("、");
 }
 
+async function fetchRecentTradingDay() {
+  const start = new Date();
+  start.setDate(start.getDate() - 14);
+  const url = new URL("https://push2his.eastmoney.com/api/qt/stock/kline/get");
+  url.searchParams.set("secid", "1.000001");
+  url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
+  url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61");
+  url.searchParams.set("klt", "101");
+  url.searchParams.set("fqt", "1");
+  url.searchParams.set("beg", formatDate(start).replaceAll("-", ""));
+  url.searchParams.set("end", "20500101");
+
+  try {
+    const payload = await jsonp(url.toString());
+    const klines = payload && payload.data && payload.data.klines;
+    if (!Array.isArray(klines) || klines.length === 0) return previousWeekday();
+    return parseKline(klines[klines.length - 1]).date || previousWeekday();
+  } catch {
+    return previousWeekday();
+  }
+}
+
+async function resolveStockCodesFromNames(names) {
+  const results = [];
+  const failed = [];
+
+  for (const name of names) {
+    const url = new URL("https://searchapi.eastmoney.com/api/suggest/get");
+    url.searchParams.set("input", name);
+    url.searchParams.set("type", "14");
+    url.searchParams.set("token", "D43BF722C8E33FCD6DC17E80F5BDF918");
+
+    try {
+      const payload = await jsonp(url.toString());
+      const rows = payload && payload.QuotationCodeTable && payload.QuotationCodeTable.Data;
+      const match = Array.isArray(rows) && rows.find((row) => row.Classify === "AStock" && /^\d{6}$/.test(row.Code));
+      if (match) {
+        results.push({
+          code: normalizeCode(match.Code),
+          name: match.Name || name,
+        });
+      } else {
+        failed.push(name);
+      }
+    } catch {
+      failed.push(name);
+    }
+  }
+
+  return { results, failed };
+}
+
 async function fetchBusinessRemark(code) {
   const url = new URL("https://datacenter.eastmoney.com/securities/api/data/v1/get");
   url.searchParams.set("reportName", "RPT_F10_ORG_BASICINFO");
@@ -376,7 +457,8 @@ async function refreshVisibleStocks() {
 async function init() {
   updateClock();
   window.setInterval(updateClock, 1000);
-  els.startDate.value = "";
+  state.recentTradingDate = await fetchRecentTradingDay();
+  els.startDate.value = state.recentTradingDate;
   const publicStocks = await loadPublicStocks();
   state.publicStocks = publicStocks;
   state.stocks = loadLocal() || publicStocks;
@@ -388,26 +470,39 @@ async function init() {
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const codes = parseCodes(els.code.value);
-  if (codes.length === 0) return;
+  const names = parseNames(els.name.value);
+  let entries = codes.map((code) => ({ code }));
+  let failed = [];
 
-  const addDate = els.startDate.value || today();
-  const manualName = els.name.value.trim();
+  if (entries.length === 0 && names.length > 0) {
+    els.status.textContent = `正在查找 ${names.length} 只股票`;
+    const resolved = await resolveStockCodesFromNames(names);
+    entries = resolved.results;
+    failed = resolved.failed;
+  }
+
+  if (entries.length === 0) {
+    els.status.textContent = "请输入股票代码或股票名称";
+    return;
+  }
+
+  const addDate = els.startDate.value || state.recentTradingDate || previousWeekday();
   const manualStartPrice = els.startPrice.value;
   const added = [];
-  const failed = [];
 
-  els.status.textContent = `正在添加 ${codes.length} 只股票`;
-  for (const code of codes) {
+  els.status.textContent = `正在添加 ${entries.length} 只股票`;
+  for (const entry of entries) {
     try {
-      const fetched = await fetchStockFromEastMoney(code, addDate, codes.length === 1 ? manualStartPrice : "");
+      const code = entry.code;
+      const fetched = await fetchStockFromEastMoney(code, addDate, entries.length === 1 ? manualStartPrice : "");
       const remark = await fetchBusinessRemark(code);
       added.push({
         ...fetched,
-        name: codes.length === 1 && manualName ? manualName : fetched.name,
+        name: fetched.name || entry.name || code,
         remark,
       });
     } catch (error) {
-      failed.push(code);
+      failed.push(entry.name || entry.code);
     }
   }
 
@@ -419,7 +514,7 @@ els.form.addEventListener("submit", async (event) => {
   }
 
   els.form.reset();
-  els.startDate.value = "";
+  els.startDate.value = state.recentTradingDate || "";
   els.status.textContent =
     failed.length > 0 ? `已添加 ${added.length} 只，失败 ${failed.join("、")}` : `已添加 ${added.length} 只股票`;
 });

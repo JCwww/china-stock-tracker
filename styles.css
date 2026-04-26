@@ -243,22 +243,16 @@ td:nth-child(3) {
 
 th:nth-child(2),
 td:nth-child(2) {
-  width: 120px;
+  width: 132px;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
-  width: 92px;
+  width: 190px;
 }
 
 th:nth-child(4),
 td:nth-child(4) {
-  width: 190px;
-  text-align: left;
-}
-
-th:nth-child(5),
-td:nth-child(5) {
   width: 136px;
   text-align: center;
 }
@@ -292,6 +286,16 @@ td:last-child {
   font-size: 13px;
   line-height: 1.35;
   resize: vertical;
+}
+
+.stock-name {
+  font-weight: 750;
+}
+
+.stock-code {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 tbody tr:last-child td {
@@ -343,7 +347,7 @@ tbody tr:last-child td {
   }
 
   table {
-    min-width: 1310px;
+    min-width: 1190px;
   }
 
   th:nth-child(2),
