@@ -253,6 +253,12 @@ td:nth-child(3) {
 
 th:nth-child(4),
 td:nth-child(4) {
+  width: 190px;
+  text-align: left;
+}
+
+th:nth-child(5),
+td:nth-child(5) {
   width: 136px;
   text-align: center;
 }
@@ -277,6 +283,15 @@ td:last-child {
   min-height: 34px;
   padding: 6px 8px;
   font-size: 13px;
+}
+
+.remark-input {
+  min-height: 48px;
+  max-height: 96px;
+  padding: 7px 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  resize: vertical;
 }
 
 tbody tr:last-child td {
@@ -328,7 +343,7 @@ tbody tr:last-child td {
   }
 
   table {
-    min-width: 1120px;
+    min-width: 1310px;
   }
 
   th:nth-child(2),

@@ -51,6 +51,12 @@ function secid(code) {
   return `${exchangePrefix(code)}.${code}`;
 }
 
+function secuCode(code) {
+  if (/^6|^9/.test(code)) return `${code}.SH`;
+  if (/^4|^8/.test(code)) return `${code}.BJ`;
+  return `${code}.SZ`;
+}
+
 function money(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(2) : "-";
@@ -188,6 +194,7 @@ function render() {
     cells.index.textContent = String(index + 1);
     cells.name.textContent = stock.name || "-";
     cells.code.textContent = stock.code;
+    cells.remark.value = stock.remark || "";
     cells.startDate.value = stock.startDate || "";
     cells.startPrice.textContent = money(stock.startPrice);
     cells.highPrice.textContent = money(stock.highPrice);
@@ -199,6 +206,14 @@ function render() {
     cells.startDate.addEventListener("change", () => {
       if (!cells.startDate.value || cells.startDate.value === stock.startDate) return;
       changeStartDate(stock, cells.startDate.value, cells.startDate);
+    });
+
+    cells.remark.addEventListener("change", () => {
+      replaceStock(stock.code, {
+        ...stock,
+        remark: cells.remark.value.trim(),
+      });
+      els.status.textContent = `${stock.name || stock.code} 备注已保存`;
     });
 
     row.querySelector(".delete").addEventListener("click", () => {
@@ -227,7 +242,7 @@ async function loadPublicStocks() {
   }
 }
 
-function jsonp(url) {
+function jsonp(url, callbackParam = "cb") {
   return new Promise((resolve, reject) => {
     const callback = `stockCallback_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const script = document.createElement("script");
@@ -247,7 +262,7 @@ function jsonp(url) {
       resolve(payload);
     };
 
-    script.src = `${url}${url.includes("?") ? "&" : "?"}cb=${callback}`;
+    script.src = `${url}${url.includes("?") ? "&" : "?"}${callbackParam}=${callback}`;
     script.onerror = () => {
       cleanup();
       reject(new Error("请求失败"));
@@ -265,6 +280,38 @@ function parseKline(line) {
     high: Number(high),
     low: Number(low),
   };
+}
+
+function summarizeBusiness(text) {
+  const clean = String(text || "")
+    .replace(/等.*$/u, "")
+    .replace(/主要从事|主营业务为|公司主营业务为|业务包括|产品包括/gu, "")
+    .trim();
+  const parts = clean
+    .split(/[、，,；;及和]/u)
+    .map((part) => part.replace(/(的)?(研发|生产|销售|服务|运营|制造|加工|冶炼)$/u, "").trim())
+    .filter(Boolean);
+  return parts.slice(0, 4).join("、");
+}
+
+async function fetchBusinessRemark(code) {
+  const url = new URL("https://datacenter.eastmoney.com/securities/api/data/v1/get");
+  url.searchParams.set("reportName", "RPT_F10_ORG_BASICINFO");
+  url.searchParams.set("columns", "SECUCODE,MAIN_BUSINESS,PRODUCT_NAME,EM2016");
+  url.searchParams.set("filter", `(SECUCODE="${secuCode(code)}")`);
+  url.searchParams.set("pageNumber", "1");
+  url.searchParams.set("pageSize", "1");
+  url.searchParams.set("source", "HSF10");
+  url.searchParams.set("client", "PC");
+
+  try {
+    const payload = await jsonp(url.toString(), "callback");
+    const row = payload && payload.result && payload.result.data && payload.result.data[0];
+    const summary = summarizeBusiness(row && (row.MAIN_BUSINESS || row.PRODUCT_NAME || row.EM2016));
+    return summary || "";
+  } catch {
+    return "";
+  }
 }
 
 async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
@@ -353,9 +400,11 @@ els.form.addEventListener("submit", async (event) => {
   for (const code of codes) {
     try {
       const fetched = await fetchStockFromEastMoney(code, addDate, codes.length === 1 ? manualStartPrice : "");
+      const remark = await fetchBusinessRemark(code);
       added.push({
         ...fetched,
         name: codes.length === 1 && manualName ? manualName : fetched.name,
+        remark,
       });
     } catch (error) {
       failed.push(code);

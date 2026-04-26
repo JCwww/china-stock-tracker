@@ -15,6 +15,56 @@ def exchange_prefix(code: str) -> str:
     return "1" if code.startswith(("6", "9")) else "0"
 
 
+def secu_code(code: str) -> str:
+    if code.startswith(("6", "9")):
+        return f"{code}.SH"
+    if code.startswith(("4", "8")):
+        return f"{code}.BJ"
+    return f"{code}.SZ"
+
+
+def summarize_business(text: str) -> str:
+    if not text:
+        return ""
+    clean = text.split("等", 1)[0]
+    for phrase in ("主要从事", "主营业务为", "公司主营业务为", "业务包括", "产品包括"):
+        clean = clean.replace(phrase, "")
+    parts = []
+    for token in clean.replace("，", "、").replace(",", "、").replace("；", "、").replace(";", "、").split("、"):
+        token = token.strip()
+        for suffix in ("研发", "生产", "销售", "服务", "运营", "制造", "加工", "冶炼"):
+            if token.endswith(suffix):
+                token = token[: -len(suffix)]
+        if token:
+            parts.append(token)
+    return "、".join(parts[:4])
+
+
+def fetch_business_remark(code: str) -> str:
+    params = urlencode(
+        {
+            "reportName": "RPT_F10_ORG_BASICINFO",
+            "columns": "SECUCODE,MAIN_BUSINESS,PRODUCT_NAME,EM2016",
+            "filter": f'(SECUCODE="{secu_code(code)}")',
+            "pageNumber": "1",
+            "pageSize": "1",
+            "source": "HSF10",
+            "client": "PC",
+        }
+    )
+    request = Request(
+        f"https://datacenter.eastmoney.com/securities/api/data/v1/get?{params}",
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    with urlopen(request, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    rows = ((payload.get("result") or {}).get("data") or [])
+    if not rows:
+        return ""
+    row = rows[0]
+    return summarize_business(row.get("MAIN_BUSINESS") or row.get("PRODUCT_NAME") or row.get("EM2016") or "")
+
+
 def fetch_history(stock: dict) -> dict:
     code = str(stock["code"]).zfill(6)
     start_date = str(stock.get("startDate") or date.today().isoformat()).replace("-", "")
@@ -64,6 +114,7 @@ def fetch_history(stock: dict) -> dict:
         **stock,
         "name": stock.get("name") or data.get("name") or code,
         "code": code,
+        "remark": stock.get("remark") or fetch_business_remark(code),
         "startDate": stock.get("startDate") or first["date"],
         "startPrice": round(start_price, 3),
         "highPrice": round(max(old_high, history_high), 3),

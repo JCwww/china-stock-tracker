@@ -4,6 +4,7 @@
     {
       "name": "湖南白银",
       "code": "002716",
+      "remark": "白银、电解铅、黄金、电积铜",
       "startDate": "2024-01-01",
       "startPrice": 6.92,
       "highPrice": 21.3,
@@ -13,6 +14,7 @@
     {
       "name": "蓝色光标",
       "code": "300058",
+      "remark": "数字营销、品牌管理、广告服务",
       "startDate": "2024-01-01",
       "startPrice": 11.52,
       "highPrice": 24.43,
@@ -22,6 +24,7 @@
     {
       "name": "利欧股份",
       "code": "002131",
+      "remark": "数字营销、泵业机械、园林机械",
       "startDate": "2024-01-01",
       "startPrice": 5.64,
       "highPrice": 10.4,

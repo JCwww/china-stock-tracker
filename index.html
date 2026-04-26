@@ -59,6 +59,7 @@
               <th><button class="sort-button" type="button" data-sort="index">序号</button></th>
               <th>股票名称</th>
               <th>股票代码</th>
+              <th>备注</th>
               <th><button class="sort-button" type="button" data-sort="startDate">起始日期</button></th>
               <th><button class="sort-button" type="button" data-sort="startPrice">添加起始日价</button></th>
               <th><button class="sort-button" type="button" data-sort="highPrice">起始日起最高价</button></th>
@@ -80,6 +81,9 @@
         <td data-key="index"></td>
         <td data-key="name"></td>
         <td data-key="code"></td>
+        <td>
+          <textarea class="remark-input" data-key="remark" rows="2" title="编辑备注"></textarea>
+        </td>
         <td>
           <input class="row-date" data-key="startDate" type="date" title="修改起始日期" />
         </td>
