@@ -668,13 +668,14 @@ els.form.addEventListener("submit", async (event) => {
   els.status.textContent = `正在添加 ${entries.length} 只股票`;
   for (const entry of entries) {
     try {
+      const resolvedName = entry.name || (await resolveStockNameFromCode(entry.code));
       let fetched;
       try {
-        fetched = await fetchStockQuote(entry.code, addDate, entries.length === 1 ? manualStartPrice : "", entry.name || "");
+        fetched = await fetchStockQuote(entry.code, addDate, entries.length === 1 ? manualStartPrice : "", resolvedName);
       } catch {
         fetched = {
           code: entry.code,
-          name: entry.name || (await resolveStockNameFromCode(entry.code)),
+          name: resolvedName,
           startDate: addDate,
           startPrice: entries.length === 1 && Number(manualStartPrice) > 0 ? Number(manualStartPrice) : null,
           highPrice: null,
@@ -686,7 +687,7 @@ els.form.addEventListener("submit", async (event) => {
       const remark = await fetchBusinessRemark(entry.code);
       const saved = await upsertRemoteStock({
         ...fetched,
-        name: fetched.name || entry.name || entry.code,
+        name: fetched.name || resolvedName || entry.code,
         remark,
         deleted: false,
       });
