@@ -1,18 +1,15 @@
+const SUPABASE_URL = "https://kawztespuaiztftoifdk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Ydf2JJK06d4GMTE2awOSwg_3GZLTR27";
 const PUBLIC_DATA_URL = "./data/market.json";
-const USER_STOCKS_URL = "./data/user-stocks.json";
 const FALLBACK_DATA_URL = "./data/stocks.json";
-const LOCAL_KEY = "cn-stock-tracker-local-v1";
-const STORE_KEY = "cn-stock-tracker-store-v2";
 
 const state = {
-  publicStocks: [],
+  allStocks: [],
   stocks: [],
   query: "",
   sortKey: "",
   sortDirection: "desc",
   recentTradingDate: "",
-  history: [],
-  deletedStocks: [],
 };
 
 const els = {
@@ -33,19 +30,15 @@ const els = {
   sortButtons: [...document.querySelectorAll("[data-sort]")],
 };
 
-function today() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function formatDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function today() {
+  return formatDate(new Date());
 }
 
 function previousWeekday() {
@@ -114,41 +107,119 @@ function calculate(stock) {
   };
 }
 
-function saveLocal() {
-  localStorage.setItem(
-    STORE_KEY,
-    JSON.stringify({
-      stocks: state.stocks,
-      history: state.history,
-      deletedStocks: state.deletedStocks,
-    }),
-  );
+function updateClock() {
+  els.clock.textContent = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date());
 }
 
-function loadStore() {
+function supabaseHeaders(extra = {}) {
+  return {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+    ...extra,
+  };
+}
+
+async function supabaseRequest(path, options = {}) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: supabaseHeaders(options.headers),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Supabase HTTP ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+function fromDb(row) {
+  return {
+    code: row.code,
+    name: row.name,
+    remark: row.remark || "",
+    recommender: row.recommender || "",
+    startDate: row.start_date || "",
+    startPrice: Number(row.start_price),
+    highPrice: Number(row.high_price),
+    closePrice: Number(row.close_price),
+    updatedAt: row.last_quote_date || "",
+    deleted: Boolean(row.deleted),
+    createdAt: row.created_at || "",
+  };
+}
+
+function toDb(stock) {
+  return {
+    code: stock.code,
+    name: stock.name || stock.code,
+    remark: stock.remark || "",
+    recommender: stock.recommender || "",
+    start_date: stock.startDate || state.recentTradingDate || previousWeekday(),
+    start_price: Number(stock.startPrice) || null,
+    high_price: Number(stock.highPrice) || null,
+    close_price: Number(stock.closePrice) || null,
+    last_quote_date: stock.updatedAt || null,
+    deleted: Boolean(stock.deleted),
+  };
+}
+
+async function loadRemoteStocks() {
+  const rows = await supabaseRequest("stocks?select=*&order=created_at.desc");
+  state.allStocks = rows.map(fromDb);
+  state.stocks = state.allStocks.filter((stock) => !stock.deleted);
+}
+
+async function upsertRemoteStock(stock) {
+  const rows = await supabaseRequest("stocks?on_conflict=code", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(toDb(stock)),
+  });
+  const saved = fromDb(rows[0]);
+  state.allStocks = [saved, ...state.allStocks.filter((item) => item.code !== saved.code)];
+  state.stocks = state.allStocks.filter((item) => !item.deleted);
+  return saved;
+}
+
+async function patchRemoteStock(code, patch) {
+  const rows = await supabaseRequest(`stocks?code=eq.${encodeURIComponent(code)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(patch),
+  });
+  const saved = fromDb(rows[0]);
+  state.allStocks = state.allStocks.map((stock) => (stock.code === saved.code ? saved : stock));
+  state.stocks = state.allStocks.filter((stock) => !stock.deleted);
+  return saved;
+}
+
+async function loadJson(url) {
+  const response = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+async function loadFallbackStocks() {
   try {
-    const store = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-    if (store && Array.isArray(store.stocks)) return store;
-    const legacyStocks = JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
-    if (Array.isArray(legacyStocks) && legacyStocks.length > 0) {
-      return {
-        stocks: legacyStocks,
-        history: legacyStocks,
-        deletedStocks: [],
-      };
-    }
-    return null;
+    const payload = await loadJson(PUBLIC_DATA_URL);
+    return Array.isArray(payload.stocks) ? payload.stocks : payload;
   } catch {
-    return null;
+    const payload = await loadJson(FALLBACK_DATA_URL);
+    return Array.isArray(payload.stocks) ? payload.stocks : payload;
   }
 }
 
 function stockLabel(stock) {
   return `${stock.name || stock.code}（${stock.code}）`;
-}
-
-function upsertByCode(list, stock) {
-  return [stock, ...list.filter((item) => item.code !== stock.code)].slice(0, 80);
 }
 
 function renderSelect(select, stocks, placeholder) {
@@ -157,7 +228,6 @@ function renderSelect(select, stocks, placeholder) {
   empty.value = "";
   empty.textContent = placeholder;
   select.appendChild(empty);
-
   for (const stock of stocks) {
     const option = document.createElement("option");
     option.value = stock.code;
@@ -167,61 +237,18 @@ function renderSelect(select, stocks, placeholder) {
 }
 
 function renderAuxiliarySelects() {
-  renderSelect(els.history, state.history, "选择历史股票");
-  renderSelect(els.trash, state.deletedStocks, "选择已删除股票");
-}
-
-function mergeWithPublicData(stocks, publicStocks) {
-  const publicByCode = new Map(publicStocks.map((stock) => [stock.code, stock]));
-  return stocks.map((stock) => {
-    const publicStock = publicByCode.get(stock.code) || {};
-    return {
-      ...publicStock,
-      ...stock,
-      remark: stock.remark || publicStock.remark || "",
-      recommender: stock.recommender || publicStock.recommender || "",
-    };
-  });
-}
-
-function buildInitialStocks(store, publicStocks) {
-  if (!store) return publicStocks;
-  const deletedCodes = new Set((store.deletedStocks || []).map((stock) => stock.code));
-  const localStocks = mergeWithPublicData(store.stocks || [], publicStocks);
-  const localCodes = new Set(localStocks.map((stock) => stock.code));
-  const newPublicStocks = publicStocks.filter((stock) => !localCodes.has(stock.code) && !deletedCodes.has(stock.code));
-  return [...localStocks, ...newPublicStocks];
-}
-
-function updateClock() {
-  const now = new Date();
-  els.clock.textContent = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(now);
-}
-
-function filteredStocks() {
-  const query = state.query.trim().toLowerCase();
-  const stocks = !query
-    ? state.stocks
-    : state.stocks.filter((stock) => {
-    return stock.code.includes(query) || String(stock.name || "").toLowerCase().includes(query);
-  });
-  return sortStocks(stocks);
+  renderSelect(els.history, state.allStocks, "选择历史股票");
+  renderSelect(
+    els.trash,
+    state.allStocks.filter((stock) => stock.deleted),
+    "选择已删除股票",
+  );
 }
 
 function sortValue(stock, index, key) {
   if (key === "index") return index + 1;
   if (key === "startDate") return Date.parse(stock.startDate || "") || 0;
-  if (key === "increase" || key === "highDrawdown" || key === "startDrawdown") {
-    return calculate(stock)[key];
-  }
+  if (key === "increase" || key === "highDrawdown" || key === "startDrawdown") return calculate(stock)[key];
   return Number(stock[key]);
 }
 
@@ -233,7 +260,6 @@ function sortStocks(stocks) {
     const originalB = state.stocks.findIndex((stock) => stock.code === b.code);
     const valueA = sortValue(a, originalA, state.sortKey);
     const valueB = sortValue(b, originalB, state.sortKey);
-
     if (!Number.isFinite(valueA) && !Number.isFinite(valueB)) return originalA - originalB;
     if (!Number.isFinite(valueA)) return 1;
     if (!Number.isFinite(valueB)) return -1;
@@ -242,37 +268,19 @@ function sortStocks(stocks) {
   });
 }
 
+function filteredStocks() {
+  const query = state.query.trim().toLowerCase();
+  const stocks = query
+    ? state.stocks.filter((stock) => stock.code.includes(query) || String(stock.name || "").toLowerCase().includes(query))
+    : state.stocks;
+  return sortStocks(stocks);
+}
+
 function updateSortButtons() {
   for (const button of els.sortButtons) {
     const active = button.dataset.sort === state.sortKey;
     button.classList.toggle("active", active);
     button.dataset.direction = active ? state.sortDirection : "";
-  }
-}
-
-function replaceStock(code, nextStock) {
-  state.stocks = state.stocks.map((stock) => (stock.code === code ? nextStock : stock));
-  saveLocal();
-  render();
-}
-
-async function changeStartDate(stock, startDate, input) {
-  const oldValue = stock.startDate || "";
-  input.disabled = true;
-  els.status.textContent = `正在更新 ${stock.name || stock.code}`;
-
-  try {
-    const next = await fetchStockFromEastMoney(stock.code, startDate, "");
-    replaceStock(stock.code, {
-      ...stock,
-      ...next,
-      name: stock.name || next.name,
-    });
-    els.status.textContent = `${stock.name || stock.code} 已按新起始日期更新`;
-  } catch (error) {
-    input.value = oldValue;
-    input.disabled = false;
-    els.status.textContent = error.message || "更新失败";
   }
 }
 
@@ -300,6 +308,7 @@ function render() {
     nameLine.textContent = stock.name || "-";
     codeLine.textContent = `（${stock.code}）`;
     cells.identity.append(nameLine, codeLine);
+
     cells.remark.value = stock.remark || "";
     cells.recommender.value = stock.recommender || "";
     cells.startDate.value = stock.startDate || "";
@@ -310,68 +319,31 @@ function render() {
     setTrend(cells.highDrawdown, computed.highDrawdown);
     setTrend(cells.startDrawdown, computed.startDrawdown);
 
-    cells.startDate.addEventListener("change", () => {
+    cells.startDate.addEventListener("change", async () => {
       if (!cells.startDate.value || cells.startDate.value === stock.startDate) return;
-      changeStartDate(stock, cells.startDate.value, cells.startDate);
+      await changeStartDate(stock, cells.startDate.value, cells.startDate);
     });
 
-    cells.remark.addEventListener("change", () => {
-      replaceStock(stock.code, {
-        ...stock,
-        remark: cells.remark.value.trim(),
-      });
+    cells.remark.addEventListener("change", async () => {
+      await patchRemoteStock(stock.code, { remark: cells.remark.value.trim() });
+      render();
       els.status.textContent = `${stock.name || stock.code} 备注已保存`;
     });
 
-    cells.recommender.addEventListener("change", () => {
-      replaceStock(stock.code, {
-        ...stock,
-        recommender: cells.recommender.value.trim(),
-      });
+    cells.recommender.addEventListener("change", async () => {
+      await patchRemoteStock(stock.code, { recommender: cells.recommender.value.trim() });
+      render();
       els.status.textContent = `${stock.name || stock.code} 推荐人已保存`;
     });
 
-    row.querySelector(".delete").addEventListener("click", () => {
-      state.deletedStocks = upsertByCode(state.deletedStocks, stock);
-      state.stocks = state.stocks.filter((item) => item.code !== stock.code);
-      saveLocal();
+    row.querySelector(".delete").addEventListener("click", async () => {
+      await patchRemoteStock(stock.code, { deleted: true });
       render();
+      els.status.textContent = `${stock.name || stock.code} 已移入垃圾桶`;
     });
 
     els.rows.appendChild(row);
   });
-}
-
-async function loadJson(url) {
-  const response = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-async function loadPublicStocks() {
-  try {
-    const marketPayload = await loadJson(PUBLIC_DATA_URL);
-    const marketStocks = Array.isArray(marketPayload.stocks) ? marketPayload.stocks : marketPayload;
-    try {
-      const userPayload = await loadJson(USER_STOCKS_URL);
-      const userStocks = Array.isArray(userPayload.stocks) ? userPayload.stocks : userPayload;
-      const userByCode = new Map(userStocks.map((stock) => [stock.code, stock]));
-      return marketStocks.map((stock) => {
-        const userStock = userByCode.get(stock.code) || {};
-        return {
-          ...userStock,
-          ...stock,
-          remark: userStock.remark || stock.remark || "",
-          recommender: userStock.recommender || stock.recommender || "",
-        };
-      });
-    } catch {
-      return marketStocks;
-    }
-  } catch {
-    const payload = await loadJson(FALLBACK_DATA_URL);
-    return Array.isArray(payload.stocks) ? payload.stocks : payload;
-  }
 }
 
 function jsonp(url, callbackParam = "cb") {
@@ -405,13 +377,7 @@ function jsonp(url, callbackParam = "cb") {
 
 function parseKline(line) {
   const [date, open, close, high, low] = String(line).split(",");
-  return {
-    date,
-    open: Number(open),
-    close: Number(close),
-    high: Number(high),
-    low: Number(low),
-  };
+  return { date, open: Number(open), close: Number(close), high: Number(high), low: Number(low) };
 }
 
 function summarizeBusiness(text) {
@@ -437,7 +403,6 @@ async function fetchRecentTradingDay() {
   url.searchParams.set("fqt", "1");
   url.searchParams.set("beg", formatDate(start).replaceAll("-", ""));
   url.searchParams.set("end", "20500101");
-
   try {
     const payload = await jsonp(url.toString());
     const klines = payload && payload.data && payload.data.klines;
@@ -451,30 +416,21 @@ async function fetchRecentTradingDay() {
 async function resolveStockCodesFromNames(names) {
   const results = [];
   const failed = [];
-
   for (const name of names) {
     const url = new URL("https://searchapi.eastmoney.com/api/suggest/get");
     url.searchParams.set("input", name);
     url.searchParams.set("type", "14");
     url.searchParams.set("token", "D43BF722C8E33FCD6DC17E80F5BDF918");
-
     try {
       const payload = await jsonp(url.toString());
       const rows = payload && payload.QuotationCodeTable && payload.QuotationCodeTable.Data;
       const match = Array.isArray(rows) && rows.find((row) => row.Classify === "AStock" && /^\d{6}$/.test(row.Code));
-      if (match) {
-        results.push({
-          code: normalizeCode(match.Code),
-          name: match.Name || name,
-        });
-      } else {
-        failed.push(name);
-      }
+      if (match) results.push({ code: normalizeCode(match.Code), name: match.Name || name });
+      else failed.push(name);
     } catch {
       failed.push(name);
     }
   }
-
   return { results, failed };
 }
 
@@ -487,12 +443,10 @@ async function fetchBusinessRemark(code) {
   url.searchParams.set("pageSize", "1");
   url.searchParams.set("source", "HSF10");
   url.searchParams.set("client", "PC");
-
   try {
     const payload = await jsonp(url.toString(), "callback");
     const row = payload && payload.result && payload.result.data && payload.result.data[0];
-    const summary = summarizeBusiness(row && (row.MAIN_BUSINESS || row.PRODUCT_NAME || row.EM2016));
-    return summary || "";
+    return summarizeBusiness(row && (row.MAIN_BUSINESS || row.PRODUCT_NAME || row.EM2016)) || "";
   } catch {
     return "";
   }
@@ -500,7 +454,7 @@ async function fetchBusinessRemark(code) {
 
 async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
   const cleanCode = normalizeCode(code);
-  const beg = (startDate || today()).replaceAll("-", "");
+  const beg = (startDate || state.recentTradingDate || previousWeekday()).replaceAll("-", "");
   const url = new URL("https://push2his.eastmoney.com/api/qt/stock/kline/get");
   url.searchParams.set("secid", secid(cleanCode));
   url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
@@ -512,9 +466,7 @@ async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
 
   const payload = await jsonp(url.toString());
   const data = payload && payload.data;
-  if (!data || !Array.isArray(data.klines) || data.klines.length === 0) {
-    throw new Error("未找到该股票的日线数据");
-  }
+  if (!data || !Array.isArray(data.klines) || data.klines.length === 0) throw new Error("未找到该股票的日线数据");
 
   const klines = data.klines.map(parseKline).filter((item) => Number.isFinite(item.close));
   const first = klines[0];
@@ -530,70 +482,69 @@ async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
     highPrice,
     closePrice: last.close,
     updatedAt: last.date,
+    deleted: false,
   };
+}
+
+async function changeStartDate(stock, startDate, input) {
+  const oldValue = stock.startDate || "";
+  input.disabled = true;
+  els.status.textContent = `正在更新 ${stock.name || stock.code}`;
+  try {
+    const next = await fetchStockFromEastMoney(stock.code, startDate, "");
+    await upsertRemoteStock({ ...stock, ...next, name: stock.name || next.name });
+    render();
+    els.status.textContent = `${stock.name || stock.code} 已按新起始日期更新`;
+  } catch (error) {
+    input.value = oldValue;
+    els.status.textContent = error.message || "更新失败";
+  } finally {
+    input.disabled = false;
+  }
 }
 
 async function refreshVisibleStocks() {
   els.status.textContent = "正在刷新";
-  const refreshed = [];
-
   for (const stock of state.stocks) {
     try {
       const next = await fetchStockFromEastMoney(stock.code, stock.startDate, stock.startPrice);
-      refreshed.push({
+      await upsertRemoteStock({
         ...stock,
         ...next,
         name: stock.name || next.name,
         highPrice: Math.max(Number(stock.highPrice) || 0, Number(next.highPrice) || 0),
       });
     } catch {
-      refreshed.push(stock);
+      // Keep the existing row if one stock fails.
     }
   }
-
-  state.stocks = refreshed;
-  saveLocal();
   render();
   els.status.textContent = `已更新 ${today()}`;
 }
 
-async function fillMissingRemarks() {
-  const missing = state.stocks.filter((stock) => !stock.remark);
-  if (missing.length === 0) return;
-  let changed = false;
-  for (const stock of missing) {
-    const remark = await fetchBusinessRemark(stock.code);
-    if (remark) {
-      stock.remark = remark;
-      changed = true;
-    }
-  }
-  if (changed) {
-    saveLocal();
+async function initRemoteData() {
+  try {
+    await loadRemoteStocks();
+    const newest = state.allStocks.map((stock) => stock.updatedAt).filter(Boolean).sort().pop();
+    state.recentTradingDate = newest || previousWeekday();
+    els.startDate.value = state.recentTradingDate;
     render();
+    els.status.textContent = newest ? `数据日期 ${newest}` : "数据已载入";
+  } catch (error) {
+    const fallback = await loadFallbackStocks();
+    state.allStocks = fallback.map((stock) => ({ ...stock, deleted: false }));
+    state.stocks = state.allStocks;
+    const newest = state.stocks.map((stock) => stock.updatedAt).filter(Boolean).sort().pop();
+    state.recentTradingDate = newest || previousWeekday();
+    els.startDate.value = state.recentTradingDate;
+    render();
+    els.status.textContent = "Supabase 表未就绪，正在显示只读公开数据";
   }
-}
-
-async function init() {
-  updateClock();
-  window.setInterval(updateClock, 1000);
-  const publicStocks = await loadPublicStocks();
-  const store = loadStore();
-  state.publicStocks = publicStocks;
-  state.history = store ? mergeWithPublicData(store.history || [], publicStocks) : [];
-  state.deletedStocks = store ? mergeWithPublicData(store.deletedStocks || [], publicStocks) : [];
-  state.stocks = buildInitialStocks(store, publicStocks);
-  render();
-  const newest = state.stocks.map((stock) => stock.updatedAt).filter(Boolean).sort().pop();
-  state.recentTradingDate = newest || previousWeekday();
-  els.startDate.value = state.recentTradingDate;
-  els.status.textContent = newest ? `数据日期 ${newest}` : "数据已载入";
 
   fetchRecentTradingDay().then((date) => {
     state.recentTradingDate = date;
     els.startDate.value = date;
   });
-  fillMissingRemarks();
 }
 
 els.form.addEventListener("submit", async (event) => {
@@ -622,30 +573,23 @@ els.form.addEventListener("submit", async (event) => {
   els.status.textContent = `正在添加 ${entries.length} 只股票`;
   for (const entry of entries) {
     try {
-      const code = entry.code;
-      const fetched = await fetchStockFromEastMoney(code, addDate, entries.length === 1 ? manualStartPrice : "");
-      const remark = await fetchBusinessRemark(code);
-      added.push({
+      const fetched = await fetchStockFromEastMoney(entry.code, addDate, entries.length === 1 ? manualStartPrice : "");
+      const remark = await fetchBusinessRemark(entry.code);
+      const saved = await upsertRemoteStock({
         ...fetched,
-        name: fetched.name || entry.name || code,
+        name: fetched.name || entry.name || entry.code,
         remark,
+        deleted: false,
       });
-    } catch (error) {
+      added.push(saved);
+    } catch {
       failed.push(entry.name || entry.code);
     }
   }
 
-  if (added.length > 0) {
-    const addedCodes = new Set(added.map((stock) => stock.code));
-    state.stocks = [...added, ...state.stocks.filter((item) => !addedCodes.has(item.code))];
-    state.history = added.reduce((history, stock) => upsertByCode(history, stock), state.history);
-    state.deletedStocks = state.deletedStocks.filter((stock) => !addedCodes.has(stock.code));
-    saveLocal();
-    render();
-  }
-
   els.form.reset();
   els.startDate.value = state.recentTradingDate || "";
+  render();
   els.status.textContent =
     failed.length > 0 ? `已添加 ${added.length} 只，失败 ${failed.join("、")}` : `已添加 ${added.length} 只股票`;
 });
@@ -656,20 +600,17 @@ els.search.addEventListener("input", () => {
 });
 
 els.history.addEventListener("change", () => {
-  const stock = state.history.find((item) => item.code === els.history.value);
+  const stock = state.allStocks.find((item) => item.code === els.history.value);
   if (!stock) return;
   els.code.value = stock.code;
   els.name.value = "";
   els.history.value = "";
 });
 
-els.trash.addEventListener("change", () => {
-  const stock = state.deletedStocks.find((item) => item.code === els.trash.value);
+els.trash.addEventListener("change", async () => {
+  const stock = state.allStocks.find((item) => item.code === els.trash.value);
   if (!stock) return;
-  state.stocks = upsertByCode(state.stocks, stock);
-  state.deletedStocks = state.deletedStocks.filter((item) => item.code !== stock.code);
-  state.history = upsertByCode(state.history, stock);
-  saveLocal();
+  await patchRemoteStock(stock.code, { deleted: false });
   render();
   els.status.textContent = `${stock.name || stock.code} 已从垃圾桶恢复`;
 });
@@ -677,9 +618,8 @@ els.trash.addEventListener("change", () => {
 els.sortButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const key = button.dataset.sort;
-    if (state.sortKey === key) {
-      state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
-    } else {
+    if (state.sortKey === key) state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+    else {
       state.sortKey = key;
       state.sortDirection = key === "index" || key === "startDate" ? "asc" : "desc";
     }
@@ -689,6 +629,6 @@ els.sortButtons.forEach((button) => {
 
 els.refresh.addEventListener("click", refreshVisibleStocks);
 
-init().catch(() => {
-  els.status.textContent = "数据载入失败";
-});
+updateClock();
+window.setInterval(updateClock, 1000);
+initRemoteData();

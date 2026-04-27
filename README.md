@@ -12,7 +12,7 @@
 - 最高价回撤
 - 起始价回撤
 
-公开列表可在 `data/user-stocks.json` 中维护，GitHub Actions 会在工作日 16:10 中国时间附近自动更新 `data/market.json`。页面内新增、删除或编辑的股票会保存在当前浏览器本地。
+股票数据现在以 Supabase 的 `stocks` 表为主存储，手机和电脑会读取同一份远端数据。第一次部署时，请在 Supabase SQL Editor 里运行 `supabase-schema.sql`。GitHub Actions 会在工作日 16:10 中国时间附近自动更新 `data/market.json`，并尝试同步 Supabase 股票行情。
 
 ## 公式
 

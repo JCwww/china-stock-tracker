@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -9,6 +10,8 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 STOCKS_PATH = ROOT / "data" / "stocks.json"
 MARKET_PATH = ROOT / "data" / "market.json"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://kawztespuaiztftoifdk.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_Ydf2JJK06d4GMTE2awOSwg_3GZLTR27")
 
 
 def exchange_prefix(code: str) -> str:
@@ -123,6 +126,39 @@ def fetch_history(stock: dict) -> dict:
     }
 
 
+def sync_supabase(stocks: list[dict]) -> None:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    rows = [
+        {
+            "code": stock["code"],
+            "name": stock.get("name") or stock["code"],
+            "remark": stock.get("remark") or "",
+            "recommender": stock.get("recommender") or "",
+            "start_date": stock.get("startDate"),
+            "start_price": stock.get("startPrice"),
+            "high_price": stock.get("highPrice"),
+            "close_price": stock.get("closePrice"),
+            "last_quote_date": stock.get("updatedAt"),
+            "deleted": bool(stock.get("deleted", False)),
+        }
+        for stock in stocks
+    ]
+    request = Request(
+        f"{SUPABASE_URL.rstrip('/')}/rest/v1/stocks?on_conflict=code",
+        data=json.dumps(rows, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        response.read()
+
+
 def main() -> int:
     source = json.loads(STOCKS_PATH.read_text(encoding="utf-8"))
     stocks = source.get("stocks", source)
@@ -146,6 +182,10 @@ def main() -> int:
 
     if failures:
         print("\n".join(failures), file=sys.stderr)
+    try:
+        sync_supabase(updated)
+    except Exception as exc:
+        print(f"Supabase sync failed: {exc}", file=sys.stderr)
     print(f"Updated {len(updated)} stocks")
     return 0
 
