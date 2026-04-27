@@ -402,11 +402,18 @@ function parseSohuKline(row) {
 function summarizeBusiness(text) {
   const clean = String(text || "")
     .replace(/等.*$/u, "")
-    .replace(/主要从事|主营业务为|公司主营业务为|业务包括|产品包括/gu, "")
+    .replace(/主要从事|主营业务为|公司主营业务为|业务包括|产品包括|提供|基于|符合国家|战略方向|为客户/gu, "")
     .trim();
   const parts = clean
     .split(/[、，,；;及和]/u)
-    .map((part) => part.replace(/(的)?(研发|生产|销售|服务|运营|制造|加工|冶炼)$/u, "").trim())
+    .map((part) =>
+      part
+        .replace(/.*的/u, "")
+        .replace(/(一体化|产品以|产品|业务|相关|解决方案)$/u, "")
+        .replace(/(的)?(研发|生产|销售|服务|运营|制造|加工|冶炼)$/u, "")
+        .trim(),
+    )
+    .map((part) => part.replace(/^以/u, "").trim())
     .filter(Boolean);
   return parts.slice(0, 4).join("、");
 }
