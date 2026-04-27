@@ -137,6 +137,15 @@ select {
   appearance: auto;
 }
 
+select.placeholder {
+  color: #8a948e;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8a948e;
+}
+
 input:focus,
 textarea:focus {
   border-color: var(--accent);

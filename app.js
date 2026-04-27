@@ -224,6 +224,7 @@ function stockLabel(stock) {
 
 function renderSelect(select, stocks, placeholder) {
   select.textContent = "";
+  select.classList.add("placeholder");
   const empty = document.createElement("option");
   empty.value = "";
   empty.textContent = placeholder;
@@ -454,7 +455,8 @@ async function fetchBusinessRemark(code) {
 
 async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
   const cleanCode = normalizeCode(code);
-  const beg = (startDate || state.recentTradingDate || previousWeekday()).replaceAll("-", "");
+  let beg = (startDate || state.recentTradingDate || previousWeekday()).replaceAll("-", "");
+  const selectedDate = new Date(`${beg.slice(0, 4)}-${beg.slice(4, 6)}-${beg.slice(6, 8)}T00:00:00`);
   const url = new URL("https://push2his.eastmoney.com/api/qt/stock/kline/get");
   url.searchParams.set("secid", secid(cleanCode));
   url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
@@ -464,8 +466,25 @@ async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
   url.searchParams.set("beg", beg);
   url.searchParams.set("end", "20500101");
 
-  const payload = await jsonp(url.toString());
-  const data = payload && payload.data;
+  let payload = await jsonp(url.toString());
+  let data = payload && payload.data;
+
+  if (!data || !Array.isArray(data.klines) || data.klines.length === 0) {
+    const lookback = new Date(selectedDate);
+    lookback.setDate(lookback.getDate() - 45);
+    const fallbackUrl = new URL(url.toString());
+    fallbackUrl.searchParams.set("beg", formatDate(lookback).replaceAll("-", ""));
+    fallbackUrl.searchParams.set("end", beg);
+    const fallbackPayload = await jsonp(fallbackUrl.toString());
+    const fallbackData = fallbackPayload && fallbackPayload.data;
+    const fallbackKlines = fallbackData && Array.isArray(fallbackData.klines) ? fallbackData.klines : [];
+    if (fallbackKlines.length === 0) throw new Error("未找到该股票的日线数据");
+    beg = parseKline(fallbackKlines[fallbackKlines.length - 1]).date.replaceAll("-", "");
+    url.searchParams.set("beg", beg);
+    payload = await jsonp(url.toString());
+    data = payload && payload.data;
+  }
+
   if (!data || !Array.isArray(data.klines) || data.klines.length === 0) throw new Error("未找到该股票的日线数据");
 
   const klines = data.klines.map(parseKline).filter((item) => Number.isFinite(item.close));
@@ -542,8 +561,10 @@ async function initRemoteData() {
   }
 
   fetchRecentTradingDay().then((date) => {
-    state.recentTradingDate = date;
-    els.startDate.value = date;
+    if (!state.recentTradingDate) {
+      state.recentTradingDate = date;
+      els.startDate.value = date;
+    }
   });
 }
 
@@ -582,8 +603,8 @@ els.form.addEventListener("submit", async (event) => {
         deleted: false,
       });
       added.push(saved);
-    } catch {
-      failed.push(entry.name || entry.code);
+    } catch (error) {
+      failed.push(`${entry.name || entry.code}${error && error.message ? `：${error.message}` : ""}`);
     }
   }
 
