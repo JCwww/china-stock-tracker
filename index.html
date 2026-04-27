@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>股票追踪</title>
-    <link rel="stylesheet" href="./styles.css?v=20260426-fix1" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="shell">
@@ -49,6 +49,18 @@
             <span>查询</span>
             <input id="searchInput" autocomplete="off" placeholder="名称或代码" />
           </label>
+          <label>
+            <span>添加历史</span>
+            <select id="historySelect">
+              <option value="">选择历史股票</option>
+            </select>
+          </label>
+          <label>
+            <span>垃圾桶</span>
+            <select id="trashSelect">
+              <option value="">选择已删除股票</option>
+            </select>
+          </label>
         </div>
       </section>
 
@@ -66,6 +78,7 @@
               <th><button class="sort-button" type="button" data-sort="increase">涨幅</button></th>
               <th><button class="sort-button" type="button" data-sort="highDrawdown">最高价回撤</button></th>
               <th><button class="sort-button" type="button" data-sort="startDrawdown">起始价回撤</button></th>
+              <th>推荐人</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -92,11 +105,14 @@
         <td data-key="highDrawdown"></td>
         <td data-key="startDrawdown"></td>
         <td>
+          <input class="recommender-input" data-key="recommender" autocomplete="off" title="编辑推荐人" />
+        </td>
+        <td>
           <button class="delete" type="button" title="删除">删除</button>
         </td>
       </tr>
     </template>
 
-    <script src="./app.js?v=20260426-fix1"></script>
+    <script src="./app.js"></script>
   </body>
 </html>

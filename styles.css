@@ -27,6 +27,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -102,7 +103,7 @@ h1 {
 }
 
 .search-row {
-  grid-template-columns: minmax(220px, 360px) 1fr;
+  grid-template-columns: minmax(220px, 360px) minmax(180px, 260px) minmax(180px, 260px) 1fr;
 }
 
 label {
@@ -114,6 +115,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   min-height: 42px;
@@ -129,6 +131,10 @@ textarea {
   min-height: 42px;
   max-height: 92px;
   resize: vertical;
+}
+
+select {
+  appearance: auto;
 }
 
 input:focus,
@@ -273,6 +279,12 @@ td:last-child {
   text-align: center;
 }
 
+th:nth-last-child(2),
+td:nth-last-child(2) {
+  width: 120px;
+  text-align: left;
+}
+
 .row-date {
   min-height: 34px;
   padding: 6px 8px;
@@ -289,13 +301,26 @@ td:last-child {
 }
 
 .stock-name {
+  color: var(--ink);
   font-weight: 750;
+  text-decoration: none;
+}
+
+.stock-name:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .stock-code {
   margin-top: 3px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.recommender-input {
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 13px;
 }
 
 tbody tr:last-child td {
@@ -347,7 +372,7 @@ tbody tr:last-child td {
   }
 
   table {
-    min-width: 1190px;
+    min-width: 1310px;
   }
 
   th:nth-child(2),

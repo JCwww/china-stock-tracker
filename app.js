@@ -1,6 +1,8 @@
 const PUBLIC_DATA_URL = "./data/market.json";
+const USER_STOCKS_URL = "./data/user-stocks.json";
 const FALLBACK_DATA_URL = "./data/stocks.json";
 const LOCAL_KEY = "cn-stock-tracker-local-v1";
+const STORE_KEY = "cn-stock-tracker-store-v2";
 
 const state = {
   publicStocks: [],
@@ -9,6 +11,8 @@ const state = {
   sortKey: "",
   sortDirection: "desc",
   recentTradingDate: "",
+  history: [],
+  deletedStocks: [],
 };
 
 const els = {
@@ -21,6 +25,8 @@ const els = {
   startDate: document.querySelector("#startDateInput"),
   startPrice: document.querySelector("#startPriceInput"),
   search: document.querySelector("#searchInput"),
+  history: document.querySelector("#historySelect"),
+  trash: document.querySelector("#trashSelect"),
   refresh: document.querySelector("#refreshButton"),
   status: document.querySelector("#updateStatus"),
   clock: document.querySelector("#clockText"),
@@ -109,16 +115,82 @@ function calculate(stock) {
 }
 
 function saveLocal() {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(state.stocks));
+  localStorage.setItem(
+    STORE_KEY,
+    JSON.stringify({
+      stocks: state.stocks,
+      history: state.history,
+      deletedStocks: state.deletedStocks,
+    }),
+  );
 }
 
-function loadLocal() {
+function loadStore() {
   try {
-    const stocks = JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
-    return Array.isArray(stocks) && stocks.length > 0 ? stocks : null;
+    const store = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    if (store && Array.isArray(store.stocks)) return store;
+    const legacyStocks = JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
+    if (Array.isArray(legacyStocks) && legacyStocks.length > 0) {
+      return {
+        stocks: legacyStocks,
+        history: legacyStocks,
+        deletedStocks: [],
+      };
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+function stockLabel(stock) {
+  return `${stock.name || stock.code}（${stock.code}）`;
+}
+
+function upsertByCode(list, stock) {
+  return [stock, ...list.filter((item) => item.code !== stock.code)].slice(0, 80);
+}
+
+function renderSelect(select, stocks, placeholder) {
+  select.textContent = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = placeholder;
+  select.appendChild(empty);
+
+  for (const stock of stocks) {
+    const option = document.createElement("option");
+    option.value = stock.code;
+    option.textContent = stockLabel(stock);
+    select.appendChild(option);
+  }
+}
+
+function renderAuxiliarySelects() {
+  renderSelect(els.history, state.history, "选择历史股票");
+  renderSelect(els.trash, state.deletedStocks, "选择已删除股票");
+}
+
+function mergeWithPublicData(stocks, publicStocks) {
+  const publicByCode = new Map(publicStocks.map((stock) => [stock.code, stock]));
+  return stocks.map((stock) => {
+    const publicStock = publicByCode.get(stock.code) || {};
+    return {
+      ...publicStock,
+      ...stock,
+      remark: stock.remark || publicStock.remark || "",
+      recommender: stock.recommender || publicStock.recommender || "",
+    };
+  });
+}
+
+function buildInitialStocks(store, publicStocks) {
+  if (!store) return publicStocks;
+  const deletedCodes = new Set((store.deletedStocks || []).map((stock) => stock.code));
+  const localStocks = mergeWithPublicData(store.stocks || [], publicStocks);
+  const localCodes = new Set(localStocks.map((stock) => stock.code));
+  const newPublicStocks = publicStocks.filter((stock) => !localCodes.has(stock.code) && !deletedCodes.has(stock.code));
+  return [...localStocks, ...newPublicStocks];
 }
 
 function updateClock() {
@@ -209,6 +281,7 @@ function render() {
   const stocks = filteredStocks();
   els.empty.hidden = stocks.length > 0;
   updateSortButtons();
+  renderAuxiliarySelects();
 
   stocks.forEach((stock, index) => {
     const row = els.template.content.firstElementChild.cloneNode(true);
@@ -217,14 +290,18 @@ function render() {
 
     cells.index.textContent = String(index + 1);
     cells.identity.textContent = "";
-    const nameLine = document.createElement("div");
+    const nameLine = document.createElement("a");
     const codeLine = document.createElement("div");
     nameLine.className = "stock-name";
     codeLine.className = "stock-code";
+    nameLine.href = `https://stockpage.10jqka.com.cn/${stock.code}/`;
+    nameLine.target = "_blank";
+    nameLine.rel = "noopener noreferrer";
     nameLine.textContent = stock.name || "-";
     codeLine.textContent = `（${stock.code}）`;
     cells.identity.append(nameLine, codeLine);
     cells.remark.value = stock.remark || "";
+    cells.recommender.value = stock.recommender || "";
     cells.startDate.value = stock.startDate || "";
     cells.startPrice.textContent = money(stock.startPrice);
     cells.highPrice.textContent = money(stock.highPrice);
@@ -246,7 +323,16 @@ function render() {
       els.status.textContent = `${stock.name || stock.code} 备注已保存`;
     });
 
+    cells.recommender.addEventListener("change", () => {
+      replaceStock(stock.code, {
+        ...stock,
+        recommender: cells.recommender.value.trim(),
+      });
+      els.status.textContent = `${stock.name || stock.code} 推荐人已保存`;
+    });
+
     row.querySelector(".delete").addEventListener("click", () => {
+      state.deletedStocks = upsertByCode(state.deletedStocks, stock);
       state.stocks = state.stocks.filter((item) => item.code !== stock.code);
       saveLocal();
       render();
@@ -264,8 +350,24 @@ async function loadJson(url) {
 
 async function loadPublicStocks() {
   try {
-    const payload = await loadJson(PUBLIC_DATA_URL);
-    return Array.isArray(payload.stocks) ? payload.stocks : payload;
+    const marketPayload = await loadJson(PUBLIC_DATA_URL);
+    const marketStocks = Array.isArray(marketPayload.stocks) ? marketPayload.stocks : marketPayload;
+    try {
+      const userPayload = await loadJson(USER_STOCKS_URL);
+      const userStocks = Array.isArray(userPayload.stocks) ? userPayload.stocks : userPayload;
+      const userByCode = new Map(userStocks.map((stock) => [stock.code, stock]));
+      return marketStocks.map((stock) => {
+        const userStock = userByCode.get(stock.code) || {};
+        return {
+          ...userStock,
+          ...stock,
+          remark: userStock.remark || stock.remark || "",
+          recommender: userStock.recommender || stock.recommender || "",
+        };
+      });
+    } catch {
+      return marketStocks;
+    }
   } catch {
     const payload = await loadJson(FALLBACK_DATA_URL);
     return Array.isArray(payload.stocks) ? payload.stocks : payload;
@@ -455,12 +557,32 @@ async function refreshVisibleStocks() {
   els.status.textContent = `已更新 ${today()}`;
 }
 
+async function fillMissingRemarks() {
+  const missing = state.stocks.filter((stock) => !stock.remark);
+  if (missing.length === 0) return;
+  let changed = false;
+  for (const stock of missing) {
+    const remark = await fetchBusinessRemark(stock.code);
+    if (remark) {
+      stock.remark = remark;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveLocal();
+    render();
+  }
+}
+
 async function init() {
   updateClock();
   window.setInterval(updateClock, 1000);
   const publicStocks = await loadPublicStocks();
+  const store = loadStore();
   state.publicStocks = publicStocks;
-  state.stocks = loadLocal() || publicStocks;
+  state.history = store ? mergeWithPublicData(store.history || [], publicStocks) : [];
+  state.deletedStocks = store ? mergeWithPublicData(store.deletedStocks || [], publicStocks) : [];
+  state.stocks = buildInitialStocks(store, publicStocks);
   render();
   const newest = state.stocks.map((stock) => stock.updatedAt).filter(Boolean).sort().pop();
   state.recentTradingDate = newest || previousWeekday();
@@ -471,6 +593,7 @@ async function init() {
     state.recentTradingDate = date;
     els.startDate.value = date;
   });
+  fillMissingRemarks();
 }
 
 els.form.addEventListener("submit", async (event) => {
@@ -515,6 +638,8 @@ els.form.addEventListener("submit", async (event) => {
   if (added.length > 0) {
     const addedCodes = new Set(added.map((stock) => stock.code));
     state.stocks = [...added, ...state.stocks.filter((item) => !addedCodes.has(item.code))];
+    state.history = added.reduce((history, stock) => upsertByCode(history, stock), state.history);
+    state.deletedStocks = state.deletedStocks.filter((stock) => !addedCodes.has(stock.code));
     saveLocal();
     render();
   }
@@ -528,6 +653,25 @@ els.form.addEventListener("submit", async (event) => {
 els.search.addEventListener("input", () => {
   state.query = els.search.value;
   render();
+});
+
+els.history.addEventListener("change", () => {
+  const stock = state.history.find((item) => item.code === els.history.value);
+  if (!stock) return;
+  els.code.value = stock.code;
+  els.name.value = "";
+  els.history.value = "";
+});
+
+els.trash.addEventListener("change", () => {
+  const stock = state.deletedStocks.find((item) => item.code === els.trash.value);
+  if (!stock) return;
+  state.stocks = upsertByCode(state.stocks, stock);
+  state.deletedStocks = state.deletedStocks.filter((item) => item.code !== stock.code);
+  state.history = upsertByCode(state.history, stock);
+  saveLocal();
+  render();
+  els.status.textContent = `${stock.name || stock.code} 已从垃圾桶恢复`;
 });
 
 els.sortButtons.forEach((button) => {
