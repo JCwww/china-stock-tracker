@@ -80,6 +80,7 @@ function secuCode(code) {
 }
 
 function money(value) {
+  if (value === null || value === undefined || value === "") return "-";
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(2) : "-";
 }
@@ -142,15 +143,16 @@ async function supabaseRequest(path, options = {}) {
 }
 
 function fromDb(row) {
+  const numberOrNull = (value) => (value === null || value === undefined ? null : Number(value));
   return {
     code: row.code,
     name: row.name,
     remark: row.remark || "",
     recommender: row.recommender || "",
     startDate: row.start_date || "",
-    startPrice: Number(row.start_price),
-    highPrice: Number(row.high_price),
-    closePrice: Number(row.close_price),
+    startPrice: numberOrNull(row.start_price),
+    highPrice: numberOrNull(row.high_price),
+    closePrice: numberOrNull(row.close_price),
     updatedAt: row.last_quote_date || "",
     deleted: Boolean(row.deleted),
     createdAt: row.created_at || "",
@@ -435,6 +437,11 @@ async function resolveStockCodesFromNames(names) {
   return { results, failed };
 }
 
+async function resolveStockNameFromCode(code) {
+  const resolved = await resolveStockCodesFromNames([code]);
+  return (resolved.results[0] && resolved.results[0].name) || code;
+}
+
 async function fetchBusinessRemark(code) {
   const url = new URL("https://datacenter.eastmoney.com/securities/api/data/v1/get");
   url.searchParams.set("reportName", "RPT_F10_ORG_BASICINFO");
@@ -515,8 +522,9 @@ async function changeStartDate(stock, startDate, input) {
     render();
     els.status.textContent = `${stock.name || stock.code} 已按新起始日期更新`;
   } catch (error) {
-    input.value = oldValue;
-    els.status.textContent = error.message || "更新失败";
+    await patchRemoteStock(stock.code, { start_date: startDate });
+    render();
+    els.status.textContent = `${stock.name || stock.code} 起始日期已保存，行情稍后自动更新`;
   } finally {
     input.disabled = false;
   }
@@ -594,7 +602,21 @@ els.form.addEventListener("submit", async (event) => {
   els.status.textContent = `正在添加 ${entries.length} 只股票`;
   for (const entry of entries) {
     try {
-      const fetched = await fetchStockFromEastMoney(entry.code, addDate, entries.length === 1 ? manualStartPrice : "");
+      let fetched;
+      try {
+        fetched = await fetchStockFromEastMoney(entry.code, addDate, entries.length === 1 ? manualStartPrice : "");
+      } catch {
+        fetched = {
+          code: entry.code,
+          name: entry.name || (await resolveStockNameFromCode(entry.code)),
+          startDate: addDate,
+          startPrice: entries.length === 1 && Number(manualStartPrice) > 0 ? Number(manualStartPrice) : null,
+          highPrice: null,
+          closePrice: null,
+          updatedAt: null,
+          deleted: false,
+        };
+      }
       const remark = await fetchBusinessRemark(entry.code);
       const saved = await upsertRemoteStock({
         ...fetched,
