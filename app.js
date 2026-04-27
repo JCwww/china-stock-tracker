@@ -454,26 +454,37 @@ async function resolveStockCodesFromNames(names) {
 }
 
 async function resolveStockNameFromCode(code) {
+  const profile = await fetchStockProfile(code);
+  if (profile.name && profile.name !== code) return profile.name;
   const resolved = await resolveStockCodesFromNames([code]);
   return (resolved.results[0] && resolved.results[0].name) || code;
 }
 
-async function fetchBusinessRemark(code) {
+async function fetchStockProfile(code) {
   const url = new URL("https://datacenter.eastmoney.com/securities/api/data/v1/get");
   url.searchParams.set("reportName", "RPT_F10_ORG_BASICINFO");
-  url.searchParams.set("columns", "SECUCODE,MAIN_BUSINESS,PRODUCT_NAME,EM2016");
+  url.searchParams.set("columns", "SECUCODE,SECURITY_NAME_ABBR,MAIN_BUSINESS,PRODUCT_NAME,EM2016");
   url.searchParams.set("filter", `(SECUCODE="${secuCode(code)}")`);
   url.searchParams.set("pageNumber", "1");
   url.searchParams.set("pageSize", "1");
   url.searchParams.set("source", "HSF10");
   url.searchParams.set("client", "PC");
+
   try {
     const payload = await jsonp(url.toString(), "callback");
     const row = payload && payload.result && payload.result.data && payload.result.data[0];
-    return summarizeBusiness(row && (row.MAIN_BUSINESS || row.PRODUCT_NAME || row.EM2016)) || "";
+    if (!row) return { name: "", remark: "" };
+    return {
+      name: row.SECURITY_NAME_ABBR || "",
+      remark: summarizeBusiness(row.MAIN_BUSINESS || row.PRODUCT_NAME || row.EM2016) || "",
+    };
   } catch {
-    return "";
+    return { name: "", remark: "" };
   }
+}
+
+async function fetchBusinessRemark(code) {
+  return (await fetchStockProfile(code)).remark;
 }
 
 async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
@@ -615,6 +626,25 @@ async function refreshVisibleStocks() {
   els.status.textContent = `已更新 ${today()}`;
 }
 
+async function repairCodeOnlyNames() {
+  const targets = state.allStocks.filter((stock) => stock.name === stock.code);
+  if (targets.length === 0) return;
+  let repaired = 0;
+
+  for (const stock of targets) {
+    const name = await resolveStockNameFromCode(stock.code);
+    if (name && name !== stock.code) {
+      await patchRemoteStock(stock.code, { name });
+      repaired += 1;
+    }
+  }
+
+  if (repaired > 0) {
+    render();
+    els.status.textContent = `已修正 ${repaired} 个股票名称`;
+  }
+}
+
 async function initRemoteData() {
   try {
     await loadRemoteStocks();
@@ -640,6 +670,7 @@ async function initRemoteData() {
       els.startDate.value = date;
     }
   });
+  repairCodeOnlyNames();
 }
 
 els.form.addEventListener("submit", async (event) => {
