@@ -176,7 +176,9 @@ function toDb(stock) {
 
 async function loadRemoteStocks() {
   const rows = await supabaseRequest("stocks?select=*&order=created_at.desc");
-  state.allStocks = rows.map(fromDb);
+  state.allStocks = rows
+    .map(fromDb)
+    .filter((stock) => !(stock.code === "000001" && stock.deleted && stock.recommender === "测试"));
   state.stocks = state.allStocks.filter((stock) => !stock.deleted);
 }
 
