@@ -79,6 +79,10 @@ function secuCode(code) {
   return `${code}.SZ`;
 }
 
+function sohuCode(code) {
+  return `cn_${code}`;
+}
+
 function money(value) {
   if (value === null || value === undefined || value === "") return "-";
   const num = Number(value);
@@ -385,6 +389,16 @@ function parseKline(line) {
   return { date, open: Number(open), close: Number(close), high: Number(high), low: Number(low) };
 }
 
+function parseSohuKline(row) {
+  return {
+    date: row[0],
+    open: Number(row[1]),
+    close: Number(row[2]),
+    low: Number(row[5]),
+    high: Number(row[6]),
+  };
+}
+
 function summarizeBusiness(text) {
   const clean = String(text || "")
     .replace(/等.*$/u, "")
@@ -514,12 +528,62 @@ async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
   };
 }
 
+async function fetchStockFromSohu(code, startDate, forcedStartPrice, name = "") {
+  const cleanCode = normalizeCode(code);
+  const selected = startDate || state.recentTradingDate || previousWeekday();
+  const url = new URL("https://q.stock.sohu.com/hisHq");
+  url.searchParams.set("code", sohuCode(cleanCode));
+  url.searchParams.set("start", selected.replaceAll("-", ""));
+  url.searchParams.set("end", today().replaceAll("-", ""));
+  url.searchParams.set("stat", "1");
+  url.searchParams.set("order", "D");
+  url.searchParams.set("period", "d");
+  url.searchParams.set("rt", "jsonp");
+
+  let payload = await jsonp(url.toString(), "callback");
+  let rows = payload && payload[0] && Array.isArray(payload[0].hq) ? payload[0].hq : [];
+
+  if (rows.length === 0) {
+    const lookback = new Date(`${selected}T00:00:00`);
+    lookback.setDate(lookback.getDate() - 45);
+    url.searchParams.set("start", formatDate(lookback).replaceAll("-", ""));
+    url.searchParams.set("end", selected.replaceAll("-", ""));
+    payload = await jsonp(url.toString(), "callback");
+    rows = payload && payload[0] && Array.isArray(payload[0].hq) ? payload[0].hq : [];
+  }
+
+  const klines = rows.map(parseSohuKline).filter((item) => Number.isFinite(item.close));
+  if (klines.length === 0) throw new Error("未找到该股票的备用日线数据");
+  klines.sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+  const first = klines[0];
+  const last = klines[klines.length - 1];
+
+  return {
+    code: cleanCode,
+    name,
+    startDate: first.date,
+    startPrice: Number(forcedStartPrice) > 0 ? Number(forcedStartPrice) : first.close,
+    highPrice: Math.max(...klines.map((item) => item.high).filter(Number.isFinite)),
+    closePrice: last.close,
+    updatedAt: last.date,
+    deleted: false,
+  };
+}
+
+async function fetchStockQuote(code, startDate, forcedStartPrice, name = "") {
+  try {
+    return await fetchStockFromEastMoney(code, startDate, forcedStartPrice);
+  } catch {
+    return fetchStockFromSohu(code, startDate, forcedStartPrice, name);
+  }
+}
+
 async function changeStartDate(stock, startDate, input) {
   const oldValue = stock.startDate || "";
   input.disabled = true;
   els.status.textContent = `正在更新 ${stock.name || stock.code}`;
   try {
-    const next = await fetchStockFromEastMoney(stock.code, startDate, "");
+    const next = await fetchStockQuote(stock.code, startDate, "", stock.name);
     await upsertRemoteStock({ ...stock, ...next, name: stock.name || next.name });
     render();
     els.status.textContent = `${stock.name || stock.code} 已按新起始日期更新`;
@@ -536,7 +600,7 @@ async function refreshVisibleStocks() {
   els.status.textContent = "正在刷新";
   for (const stock of state.stocks) {
     try {
-      const next = await fetchStockFromEastMoney(stock.code, stock.startDate, stock.startPrice);
+      const next = await fetchStockQuote(stock.code, stock.startDate, stock.startPrice, stock.name);
       await upsertRemoteStock({
         ...stock,
         ...next,
@@ -606,7 +670,7 @@ els.form.addEventListener("submit", async (event) => {
     try {
       let fetched;
       try {
-        fetched = await fetchStockFromEastMoney(entry.code, addDate, entries.length === 1 ? manualStartPrice : "");
+        fetched = await fetchStockQuote(entry.code, addDate, entries.length === 1 ? manualStartPrice : "", entry.name || "");
       } catch {
         fetched = {
           code: entry.code,
