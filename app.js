@@ -163,6 +163,22 @@ function fromDb(row) {
   };
 }
 
+function createdTime(stock) {
+  const time = Date.parse(stock.createdAt || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareCreatedDesc(a, b) {
+  const timeDiff = createdTime(b) - createdTime(a);
+  if (timeDiff !== 0) return timeDiff;
+  return String(a.code || "").localeCompare(String(b.code || ""));
+}
+
+function syncActiveStocks() {
+  state.allStocks = [...state.allStocks].sort(compareCreatedDesc);
+  state.stocks = state.allStocks.filter((stock) => !stock.deleted);
+}
+
 function toDb(stock) {
   return {
     code: stock.code,
@@ -179,11 +195,11 @@ function toDb(stock) {
 }
 
 async function loadRemoteStocks() {
-  const rows = await supabaseRequest("stocks?select=*&order=created_at.desc");
+  const rows = await supabaseRequest("stocks?select=*&order=created_at.desc,code.asc");
   state.allStocks = rows
     .map(fromDb)
     .filter((stock) => !(stock.code === "000001" && stock.deleted && stock.recommender === "测试"));
-  state.stocks = state.allStocks.filter((stock) => !stock.deleted);
+  syncActiveStocks();
 }
 
 async function upsertRemoteStock(stock) {
@@ -194,7 +210,7 @@ async function upsertRemoteStock(stock) {
   });
   const saved = fromDb(rows[0]);
   state.allStocks = [saved, ...state.allStocks.filter((item) => item.code !== saved.code)];
-  state.stocks = state.allStocks.filter((item) => !item.deleted);
+  syncActiveStocks();
   return saved;
 }
 
@@ -206,7 +222,7 @@ async function patchRemoteStock(code, patch) {
   });
   const saved = fromDb(rows[0]);
   state.allStocks = state.allStocks.map((stock) => (stock.code === saved.code ? saved : stock));
-  state.stocks = state.allStocks.filter((stock) => !stock.deleted);
+  syncActiveStocks();
   return saved;
 }
 
@@ -262,7 +278,7 @@ function sortValue(stock, index, key) {
 }
 
 function sortStocks(stocks) {
-  if (!state.sortKey) return stocks;
+  if (!state.sortKey) return [...stocks].sort(compareCreatedDesc);
   const direction = state.sortDirection === "asc" ? 1 : -1;
   return [...stocks].sort((a, b) => {
     const originalA = state.stocks.findIndex((stock) => stock.code === a.code);
@@ -663,7 +679,7 @@ async function initRemoteData() {
   } catch (error) {
     const fallback = await loadFallbackStocks();
     state.allStocks = fallback.map((stock) => ({ ...stock, deleted: false }));
-    state.stocks = state.allStocks;
+    syncActiveStocks();
     const newest = state.stocks.map((stock) => stock.updatedAt).filter(Boolean).sort().pop();
     state.recentTradingDate = newest || previousWeekday();
     els.startDate.value = state.recentTradingDate;
