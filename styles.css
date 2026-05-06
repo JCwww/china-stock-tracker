@@ -103,7 +103,7 @@ h1 {
 }
 
 .search-row {
-  grid-template-columns: minmax(220px, 360px) minmax(180px, 260px) minmax(180px, 260px) 1fr;
+  grid-template-columns: minmax(220px, 360px) minmax(180px, 260px) minmax(180px, 260px) auto 1fr;
 }
 
 label {
@@ -177,6 +177,17 @@ textarea:focus {
   border-color: var(--line);
   background: #fbfcfa;
   color: var(--ink);
+}
+
+.secondary:disabled {
+  color: #8a948e;
+  cursor: default;
+  opacity: 0.72;
+}
+
+.restore-order {
+  min-width: 112px;
+  white-space: nowrap;
 }
 
 .delete {

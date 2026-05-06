@@ -25,6 +25,7 @@ const els = {
   search: document.querySelector("#searchInput"),
   history: document.querySelector("#historySelect"),
   trash: document.querySelector("#trashSelect"),
+  restoreOrder: document.querySelector("#restoreOrderButton"),
   refresh: document.querySelector("#refreshButton"),
   status: document.querySelector("#updateStatus"),
   clock: document.querySelector("#clockText"),
@@ -320,6 +321,14 @@ function updateSortButtons() {
     button.classList.toggle("active", active);
     button.dataset.direction = active ? state.sortDirection : "";
   }
+  if (els.restoreOrder) els.restoreOrder.disabled = !state.sortKey;
+}
+
+function restoreManualOrder() {
+  state.sortKey = "";
+  state.sortDirection = "desc";
+  render();
+  els.status.textContent = "已恢复我的排序";
 }
 
 function applyManualOrder(orderedStocks) {
@@ -894,6 +903,7 @@ els.sortButtons.forEach((button) => {
   });
 });
 
+els.restoreOrder.addEventListener("click", restoreManualOrder);
 els.refresh.addEventListener("click", refreshVisibleStocks);
 
 updateClock();
