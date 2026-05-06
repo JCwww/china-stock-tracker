@@ -10,6 +10,7 @@ const state = {
   sortKey: "",
   sortDirection: "desc",
   recentTradingDate: "",
+  dragCode: "",
 };
 
 const els = {
@@ -148,6 +149,7 @@ async function supabaseRequest(path, options = {}) {
 
 function fromDb(row) {
   const numberOrNull = (value) => (value === null || value === undefined ? null : Number(value));
+  const sortOrder = numberOrNull(row.sort_order);
   return {
     code: row.code,
     name: row.name,
@@ -160,6 +162,7 @@ function fromDb(row) {
     updatedAt: row.last_quote_date || "",
     deleted: Boolean(row.deleted),
     createdAt: row.created_at || "",
+    sortOrder: Number.isFinite(sortOrder) ? sortOrder : null,
   };
 }
 
@@ -174,8 +177,18 @@ function compareCreatedDesc(a, b) {
   return String(a.code || "").localeCompare(String(b.code || ""));
 }
 
+function compareDisplayOrder(a, b) {
+  const orderA = Number(a.sortOrder);
+  const orderB = Number(b.sortOrder);
+  const hasOrderA = Number.isFinite(orderA);
+  const hasOrderB = Number.isFinite(orderB);
+  if (hasOrderA && hasOrderB && orderA !== orderB) return orderA - orderB;
+  if (hasOrderA !== hasOrderB) return hasOrderA ? 1 : -1;
+  return compareCreatedDesc(a, b);
+}
+
 function syncActiveStocks() {
-  state.allStocks = [...state.allStocks].sort(compareCreatedDesc);
+  state.allStocks = [...state.allStocks].sort(compareDisplayOrder);
   state.stocks = state.allStocks.filter((stock) => !stock.deleted);
 }
 
@@ -278,7 +291,7 @@ function sortValue(stock, index, key) {
 }
 
 function sortStocks(stocks) {
-  if (!state.sortKey) return [...stocks].sort(compareCreatedDesc);
+  if (!state.sortKey) return [...stocks].sort(compareDisplayOrder);
   const direction = state.sortDirection === "asc" ? 1 : -1;
   return [...stocks].sort((a, b) => {
     const originalA = state.stocks.findIndex((stock) => stock.code === a.code);
@@ -309,6 +322,57 @@ function updateSortButtons() {
   }
 }
 
+function applyManualOrder(orderedStocks) {
+  const orderedCodes = new Set(orderedStocks.map((stock) => stock.code));
+  const activeByCode = new Map(orderedStocks.map((stock) => [stock.code, stock]));
+  state.allStocks = state.allStocks.map((stock) => activeByCode.get(stock.code) || stock);
+  state.stocks = orderedStocks.filter((stock) => !stock.deleted);
+  state.allStocks = [
+    ...state.stocks,
+    ...state.allStocks.filter((stock) => !orderedCodes.has(stock.code) && stock.deleted),
+  ];
+}
+
+async function saveManualOrder(orderedStocks) {
+  const requests = orderedStocks.map((stock) =>
+    supabaseRequest(`stocks?code=eq.${encodeURIComponent(stock.code)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ sort_order: stock.sortOrder }),
+    }),
+  );
+  await Promise.all(requests);
+}
+
+async function moveStockBefore(dragCode, targetCode) {
+  if (!dragCode || !targetCode || dragCode === targetCode) return;
+  const ordered = [...state.stocks].sort(compareDisplayOrder);
+  const fromIndex = ordered.findIndex((stock) => stock.code === dragCode);
+  const targetIndex = ordered.findIndex((stock) => stock.code === targetCode);
+  if (fromIndex < 0 || targetIndex < 0) return;
+
+  const [moved] = ordered.splice(fromIndex, 1);
+  const insertIndex = ordered.findIndex((stock) => stock.code === targetCode);
+  ordered.splice(insertIndex < 0 ? targetIndex : insertIndex, 0, moved);
+  ordered.forEach((stock, index) => {
+    stock.sortOrder = (index + 1) * 10;
+  });
+
+  state.sortKey = "";
+  applyManualOrder(ordered);
+  render();
+  els.status.textContent = "正在保存手动排序";
+
+  try {
+    await saveManualOrder(ordered);
+    els.status.textContent = "手动排序已保存";
+  } catch (error) {
+    els.status.textContent = String(error.message || error).includes("sort_order")
+      ? "请先在 Supabase SQL Editor 运行 sort_order 字段更新 SQL"
+      : "手动排序保存失败";
+  }
+}
+
 function render() {
   els.rows.textContent = "";
   const stocks = filteredStocks();
@@ -318,10 +382,49 @@ function render() {
 
   stocks.forEach((stock, index) => {
     const row = els.template.content.firstElementChild.cloneNode(true);
+    row.dataset.code = stock.code;
     const cells = Object.fromEntries([...row.querySelectorAll("[data-key]")].map((cell) => [cell.dataset.key, cell]));
     const computed = calculate(stock);
 
-    cells.index.textContent = String(index + 1);
+    cells.index.textContent = "";
+    const dragHandle = document.createElement("button");
+    dragHandle.className = "drag-handle";
+    dragHandle.type = "button";
+    dragHandle.draggable = true;
+    dragHandle.title = "拖拽排序";
+    dragHandle.setAttribute("aria-label", `拖拽排序 ${stock.name || stock.code}`);
+    dragHandle.textContent = `☰ ${index + 1}`;
+    cells.index.appendChild(dragHandle);
+
+    dragHandle.addEventListener("dragstart", (event) => {
+      state.dragCode = stock.code;
+      row.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", stock.code);
+    });
+
+    dragHandle.addEventListener("dragend", () => {
+      state.dragCode = "";
+      row.classList.remove("dragging");
+    });
+
+    row.addEventListener("dragover", (event) => {
+      if (!state.dragCode || state.dragCode === stock.code) return;
+      event.preventDefault();
+      row.classList.add("drag-over");
+    });
+
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drag-over");
+    });
+
+    row.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      row.classList.remove("drag-over");
+      await moveStockBefore(state.dragCode, stock.code);
+      state.dragCode = "";
+    });
+
     cells.identity.textContent = "";
     const nameLine = document.createElement("a");
     const codeLine = document.createElement("div");
@@ -688,7 +791,7 @@ async function initRemoteData() {
   }
 
   fetchRecentTradingDay().then((date) => {
-    if (!state.recentTradingDate) {
+    if (!state.recentTradingDate || date > state.recentTradingDate) {
       state.recentTradingDate = date;
       els.startDate.value = date;
     }

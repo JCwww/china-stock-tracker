@@ -68,6 +68,73 @@ def fetch_business_remark(code: str) -> str:
     return summarize_business(row.get("MAIN_BUSINESS") or row.get("PRODUCT_NAME") or row.get("EM2016") or "")
 
 
+def number_or_none(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def stock_from_db(row: dict) -> dict:
+    return {
+        "code": str(row.get("code") or "").zfill(6),
+        "name": row.get("name") or row.get("code") or "",
+        "remark": row.get("remark") or "",
+        "recommender": row.get("recommender") or "",
+        "startDate": row.get("start_date") or "",
+        "startPrice": number_or_none(row.get("start_price")),
+        "highPrice": number_or_none(row.get("high_price")),
+        "closePrice": number_or_none(row.get("close_price")),
+        "updatedAt": row.get("last_quote_date") or "",
+        "deleted": bool(row.get("deleted")),
+        "createdAt": row.get("created_at") or "",
+        "sortOrder": number_or_none(row.get("sort_order")),
+    }
+
+
+def load_local_stocks() -> list[dict]:
+    source = json.loads(STOCKS_PATH.read_text(encoding="utf-8"))
+    return source.get("stocks", source)
+
+
+def fetch_supabase_stocks() -> list[dict]:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return []
+    request = Request(
+        f"{SUPABASE_URL.rstrip('/')}/rest/v1/stocks?select=*&deleted=eq.false",
+        headers={
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urlopen(request, timeout=30) as response:
+        rows = json.loads(response.read().decode("utf-8"))
+    stocks = [
+        stock_from_db(row)
+        for row in rows
+        if not (row.get("code") == "000001" and row.get("deleted") and row.get("recommender") == "测试")
+    ]
+    stocks.sort(key=lambda stock: stock.get("code") or "")
+    stocks.sort(key=lambda stock: stock.get("createdAt") or "", reverse=True)
+    stocks.sort(
+        key=lambda stock: stock["sortOrder"] if stock.get("sortOrder") is not None else float("inf")
+    )
+    return stocks
+
+
+def load_stocks() -> list[dict]:
+    try:
+        stocks = fetch_supabase_stocks()
+        if stocks:
+            return stocks
+    except Exception as exc:
+        print(f"Supabase stock load failed: {exc}", file=sys.stderr)
+    return load_local_stocks()
+
+
 def fetch_history(stock: dict) -> dict:
     code = str(stock["code"]).zfill(6)
     start_date = str(stock.get("startDate") or date.today().isoformat()).replace("-", "")
@@ -160,8 +227,7 @@ def sync_supabase(stocks: list[dict]) -> None:
 
 
 def main() -> int:
-    source = json.loads(STOCKS_PATH.read_text(encoding="utf-8"))
-    stocks = source.get("stocks", source)
+    stocks = load_stocks()
     updated = []
     failures = []
 

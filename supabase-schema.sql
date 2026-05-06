@@ -13,6 +13,25 @@ create table if not exists public.stocks (
   updated_at timestamptz not null default now()
 );
 
+alter table public.stocks
+add column if not exists sort_order integer;
+
+with ordered as (
+  select
+    code,
+    row_number() over (order by created_at desc, code asc) * 10 as next_sort_order
+  from public.stocks
+  where deleted = false
+)
+update public.stocks as stocks
+set sort_order = ordered.next_sort_order
+from ordered
+where stocks.code = ordered.code
+  and stocks.sort_order is null;
+
+create index if not exists stocks_display_order_idx
+on public.stocks (deleted, sort_order, created_at desc);
+
 alter table public.stocks enable row level security;
 
 drop policy if exists "public read stocks" on public.stocks;
@@ -55,12 +74,4 @@ insert into public.stocks (
   ('002716', '湖南白银', '白银、电解铅、黄金、电积铜', '', '2024-01-01', 6.92, 21.3, 11.57, '2026-04-24', false),
   ('300058', '蓝色光标', '数字营销、品牌管理、广告服务', '', '2024-01-01', 11.52, 24.43, 17.4, '2026-04-24', false),
   ('002131', '利欧股份', '数字营销、泵业机械、园林机械', '', '2024-01-01', 5.64, 10.4, 7.37, '2026-04-24', false)
-on conflict (code) do update set
-  name = excluded.name,
-  remark = excluded.remark,
-  start_date = excluded.start_date,
-  start_price = excluded.start_price,
-  high_price = excluded.high_price,
-  close_price = excluded.close_price,
-  last_quote_date = excluded.last_quote_date,
-  deleted = excluded.deleted;
+on conflict (code) do nothing;

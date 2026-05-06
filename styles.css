@@ -204,7 +204,6 @@ th,
 td {
   padding: 13px 12px;
   border-bottom: 1px solid var(--line);
-  text-align: right;
   font-size: 14px;
   line-height: 1.35;
   vertical-align: middle;
@@ -215,12 +214,17 @@ th {
   color: #35413b;
   font-size: 12px;
   font-weight: 800;
+  text-align: center;
+}
+
+td {
+  text-align: right;
 }
 
 .sort-button {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 4px;
   width: 100%;
   min-height: 24px;
@@ -231,7 +235,7 @@ th {
   cursor: pointer;
   font: inherit;
   font-weight: inherit;
-  text-align: right;
+  text-align: center;
 }
 
 .sort-button::after {
@@ -249,9 +253,7 @@ th {
   content: "↑";
 }
 
-th:nth-child(2),
 td:nth-child(2),
-th:nth-child(3),
 td:nth-child(3) {
   text-align: left;
 }
@@ -274,7 +276,7 @@ td:nth-child(4) {
 
 th:first-child,
 td:first-child {
-  width: 56px;
+  width: 68px;
   text-align: center;
 }
 
@@ -288,10 +290,38 @@ td:last-child {
   text-align: center;
 }
 
-th:nth-last-child(2),
 td:nth-last-child(2) {
   width: 120px;
   text-align: left;
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 48px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #52605a;
+  cursor: grab;
+  font: inherit;
+  font-weight: 750;
+  touch-action: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+tr.dragging {
+  opacity: 0.55;
+}
+
+tr.drag-over td {
+  background: #edf7f2;
 }
 
 .row-date {
