@@ -656,7 +656,7 @@ async function fetchStockFromEastMoney(code, startDate, forcedStartPrice) {
   return {
     code: cleanCode,
     name: data.name || "",
-    startDate: first.date,
+    startDate: startDate || first.date,
     startPrice,
     highPrice,
     closePrice: last.close,
@@ -698,7 +698,7 @@ async function fetchStockFromSohu(code, startDate, forcedStartPrice, name = "") 
   return {
     code: cleanCode,
     name,
-    startDate: first.date,
+    startDate: selected || first.date,
     startPrice: Number(forcedStartPrice) > 0 ? Number(forcedStartPrice) : first.close,
     highPrice: Math.max(...klines.map((item) => item.high).filter(Number.isFinite)),
     closePrice: last.close,
